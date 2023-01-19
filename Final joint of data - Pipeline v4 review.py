@@ -1,7 +1,7 @@
 # Databricks notebook source
 """
 ================================================================================
-Pipeline to build input Datasets for ML Predictions applying additional 
+Pipeline to build input Datasets for ML Predictions applying additional  
 filters on years and pollutants.
 
 NOTE:
@@ -10,7 +10,7 @@ NOTE:
   https://adb-2318633810729807.7.azuredatabricks.net/?o=2318633810729807#notebook/1002874667847862
   
   Review by David Rivero at:
-  https://adb-2318633810729807.7.azuredatabricks.net/?o=2318633810729807#notebook/3734181895475091/command/3734181895475092
+  https://adb-2318633810729807.7.azuredatabricks.net/?o=2318633810729807#notebook/4435339981114382
   
 Summary of data sets which need to be included:
 
@@ -116,6 +116,18 @@ DEFAULT_TRAINING_START_YEAR = 2016
 DEFAULT_TRAINING_END_YEAR = 2019
 DEFAULT_PREDICT_START_YEAR = 2020
 DEFAULT_PREDICT_END_YEAR = 2020
+
+# Available list of Pollutants:
+# - CAMS: NO2, PM10, PM25, O3, O3_SOMO35, SO2.
+# - E1b: NO2, PM10, PM25, BaP, O3_AOT40c.
+# - AQ Measurements: NO2, PM10, PM25, O3, O3_SOMO35, O3_AOT40c, BaP, SO2.
+
+DEFAULT_ADMINISTRATIVE_FILTER = ''
+DEFAULT_CAMS_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25', 'O3', 'O3_SOMO35', 'SO2']
+DEFAULT_CITIES_FILTER = ''
+DEFAULT_E1b_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25', 'BaP', 'O3_AOT40c', 'SO2']
+DEFAULT_eRep_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25',  'BaP','O3', 'O3_SOMO35', 'O3_AOT40c', 'SO2']
+
 DEFAULT_FEATURE_SUBSETS = ["GridNum1km","windspeed","weight_tr","weight_tr_mean_var_sur","weight_urb","pop2018","pop2018_mean_var_sur","min_imp2015","var_imp2015","avg_imp2015_mean_diff_sur","min_fga2015","max_fga2015",
     "avg_fga2015_mean_sur","sum_urbdegree_12","sum_urbdegree_13","sum_urbdegree_21","sum_urbdegree_22","sum_urbdegree_30","sum_urbdegree_13_mean_sur","sum_urbdegree_21_mean_sur","sum_urbdegree_22_mean_sur",
     "sum_urbdegree_12_mean_sur","var_eudem","avg_eudem_mean_diff_sur","avg_eudem_mean_sur","sum_clc18_211","sum_clc18_312","sum_clc18_311","sum_clc18_231","sum_clc18_313","sum_clc18_243","sum_clc18_242",
@@ -129,6 +141,12 @@ dbutils.widgets.text(name='TrainingEndYear', defaultValue=str(DEFAULT_TRAINING_E
 dbutils.widgets.text(name='PredictStartYear', defaultValue=str(DEFAULT_PREDICT_START_YEAR), label='Predict start year')
 dbutils.widgets.text(name='PredictEndYear', defaultValue=str(DEFAULT_PREDICT_END_YEAR), label='Predict end year')
 dbutils.widgets.multiselect('FeatureSubsets', "GridNum1km", DEFAULT_FEATURE_SUBSETS, 'Feature subsets')
+
+dbutils.widgets.text(name='AdministrativeFilter', defaultValue=str(DEFAULT_ADMINISTRATIVE_FILTER), label='Administrative Filter')
+dbutils.widgets.text(name='CitiesFilter', defaultValue=str(DEFAULT_CITIES_FILTER), label='Cities Filter')
+dbutils.widgets.multiselect('CAMSPollutant', "NO2", DEFAULT_CAMS_POLLUTANT_FILTER, label='CAMS Pollutant')
+dbutils.widgets.multiselect('E1bPollutant', "NO2", DEFAULT_E1b_POLLUTANT_FILTER, label='E1b Pollutant')
+dbutils.widgets.multiselect('eRepPollutant', "NO2", DEFAULT_eRep_POLLUTANT_FILTER, label='ERep Pollutant')
 
 # COMMAND ----------
 
@@ -144,6 +162,12 @@ TrainingEndYear = dbutils.widgets.get('TrainingEndYear')
 PredictStartYear = dbutils.widgets.get('PredictStartYear')
 PredictEndYear = dbutils.widgets.get('PredictEndYear')
 FeatureSubsets = dbutils.widgets.get('FeatureSubsets')
+
+AdministrativeFilter = dbutils.widgets.get('AdministrativeFilter')
+CitiesFilter = dbutils.widgets.get('CitiesFilter')
+CAMSPollutant = dbutils.widgets.get('CAMSPollutant').split(",")
+E1bPollutant = dbutils.widgets.get('E1bPollutant').split(",")
+eRepPollutant = dbutils.widgets.get('eRepPollutant').split(",")
 
 # Subset of fields of static data (VERSION-1), 
 # see VIF results in:
@@ -163,12 +187,12 @@ custom_settings = {
   # Fields to fetch from STATIC data (Choose between STATIC_FIELDS_v0, STATIC_FIELDS_v1, ...).
   "STATIC_DATA_FIELDS": ", ".join(['"{}"'.format(f) for f in STATIC_FIELDS_v1])
 }
-# print(custom_settings)
+print(CAMSPollutant)
 
 
 # COMMAND ----------
 
-# DBTITLE 1,Testing settings of Input data
+# DBTITLE 1,Settings of Input data
 
 # =======================================================================================
 # Define several examples of input parameters
@@ -179,63 +203,27 @@ custom_settings = {
 # - E1b: NO2, PM10, PM25, BaP, O3_AOT40c.
 # - AQ Measurements: NO2, PM10, PM25, O3, O3_SOMO35, O3_AOT40c, BaP, SO2.
 
-# Option 1: Filtering by Administrative area's attributes...
-test_settings_01 = \
-{
-  "AdministrativeFilter": "Country = 'Andorra' OR (x >= {} AND y >= {} AND x <= {} AND y <= {})".format(3612000.0, 2182000.0, 3646000.0, 2211000.0),
-  "CitiesFilter": "",
-  
-  "TrainingStartYear": TrainingStartYear,
-  "TrainingEndYear": TrainingEndYear,
-  "PredictStartYear": PredictStartYear,
-  "PredictEndYear": PredictEndYear,
-  
-  "CAMSPollutant": "NO2"
-}
-test_settings_02 = \
-{
-  "AdministrativeFilter": "Country_ISO IN ('DE','FR','IT')",
-  "CitiesFilter": "",
-  
-  "TrainingStartYear": TrainingStartYear,
-  "TrainingEndYear": TrainingEndYear,
-  "PredictStartYear": PredictStartYear,
-  "PredictEndYear": PredictEndYear,
-  
-  "CAMSPollutant": "NO2"
-}
+settings = []
+i = 0
+# Set Settings for the Pipeline
+for pollu in CAMSPollutant:  
+  p = \
+  {
+    "AdministrativeFilter": AdministrativeFilter,
+    "CitiesFilter": CitiesFilter,
 
-# Option 2: Filtering by City's attributes...
-test_settings_03 = \
-{
-  "AdministrativeFilter": "",
-  "CitiesFilter": "City = 'Bonn' OR City = 'Weimar'",
-  
-  "TrainingStartYear": TrainingStartYear,
-  "TrainingEndYear": TrainingEndYear,
-  "PredictStartYear": PredictStartYear,
-  "PredictEndYear": PredictEndYear,
-  
-  "CAMSPollutant": "NO2"
-}
+    "TrainingStartYear": TrainingStartYear,
+    "TrainingEndYear": TrainingEndYear,
+    "PredictStartYear": PredictStartYear,
+    "PredictEndYear": PredictEndYear,
 
-# Option 3: None filter, using full European AOI...
-test_settings_04 = \
-{
-  "AdministrativeFilter": "",
-  "CitiesFilter": "",
+    "CAMSPollutant": pollu,
+    "E1bPollutant": E1bPollutant[i],
+    "eRepPollutant": eRepPollutant[i]    
+  }
+  settings.append(p)
   
-  "TrainingStartYear": TrainingStartYear,
-  "TrainingEndYear": TrainingEndYear,
-  "PredictStartYear": PredictStartYear,
-  "PredictEndYear": PredictEndYear,
-  
-  "CAMSPollutant": "NO2"
-}
-
-# Set Settings to test a Pipeline in next Cell of this Notebook.
-test_settings = test_settings_04
-
+print(settings)
 
 # COMMAND ----------
 
@@ -245,8 +233,6 @@ test_settings = test_settings_04
 # See:
 # https://adb-2318633810729807.7.azuredatabricks.net/?o=2318633810729807#notebook/1002874667847862/command/1953539243064437
 #
-
-# Why left joins??
 
 
 AQ_MEASUREMENT_DATA_QUERY = """
@@ -859,58 +845,6 @@ inputs_pipeline_as_text = """
 
 # COMMAND ----------
 
-# DEBUGGING: 
-
-# Set user settings of Pipeline part about inputs (MinMaxScaler operations, what input static data to use...).
-test_pipeline_as_text = inputs_pipeline_as_text
-for k,v in custom_settings.items():
-    test_pipeline_as_text = test_pipeline_as_text.replace("$"+k, v)
-
-# Get final settings, it replaces all $Variable definitions in current Pipeline graph.
-test_context_args = context_args.copy()
-test_pipeline = DataPipeline.prepare_pipeline(test_pipeline_as_text, test_settings)
-
-# Run the Pipeline.
-pipeline_ob = GeoDataPipeline()
-test_df = pipeline_ob.run_from_string(test_pipeline, factories={}, context_args=test_context_args)
-pipeline_ob = None
-
-# Show results.
-display(test_df)
-
-
-# COMMAND ----------
-
-
-# DEBUGGING: 
-
-# Show data of temporary/internal Dataframes.
-spark.conf.set("spark.databricks.io.cache.enabled", "true")
-stack_ob = test_context_args['Stack']
-
-for object_name in ['LOOKUP_INPUT_WITH_ALL_ATTRIBUTES', 'LOOKUP_INPUT', 'STATIC_INPUT', 'LOOKUP_STATIC_JOIN', 
-                    'CLIMATE_INPUT', 'CAMS_INPUT', 'CLIMATE_CAMS_JOIN', 
-                    'ML_MAIN_INPUT',
-                    'E1B_INPUT', 
-                    'EREP_INPUT']:
-    #
-    temp_df = stack_ob.get(object_name)
-    print('Table: "{}", Count: {}'.format(object_name, temp_df.count()))
-    display(temp_df)
-
-
-# COMMAND ----------
-
-# DEBUGGING: 
-
-# Show partial results in a Map.
-my_map = FoliumUtils.create_folium_map_from_table(map_content_args={'table': test_df.filter('Year = 2019'), 'attributes': ['cams_NO2','climate_QQ','var_eudem']})
-my_map.fit_bounds(my_map.get_bounds())
-my_map
-
-
-# COMMAND ----------
-
 # DBTITLE 1,Implementing & testing Pipeline declaration for Outputs
 # Pipeline declaration with the Dataflow to perform (As STRING).
 output_pipeline_as_text = """
@@ -1118,343 +1052,6 @@ output_pipeline_as_text = """
 
 # COMMAND ----------
 
-# DBTITLE 1,Example 1 (Task #141263)
-
-"""
-============================================================================================
-Example 1: https://taskman.eionet.europa.eu/issues/141263
-============================================================================================
-
-User wants to generate data sets to perform ML training both on measurement and modelling 
-targets for years 2016 - 2019 and PM10, using PM10 from CAMS as one of the input variables,
-and then predict maps for 2016 - 2019; user selects:
-
-- start year = 2016 and end year = 2019 for ML training,
-- start year = 2016 and end year = 2019 for ML validation and predictions,
-- CAMS pollutant: PM10_avg (cams_PM10),
-- target: E1b pollutant: PM10_avg (e1b_PM10),
-- target: AQ measurement pollutant: PM10_avg (pm10_avg_eRep).
-
-"""
-
-# Set user settings of Pipeline part about inputs (MinMaxScaler operations, what input static data to use...).
-example_inputs_pipeline_as_text = inputs_pipeline_as_text
-for k,v in custom_settings.items():
-    example_inputs_pipeline_as_text = example_inputs_pipeline_as_text.replace("$"+k, v)
-
-example_01_settings = \
-{
-  "AdministrativeFilter": "",
-  "CitiesFilter": "",
-  
-  "TrainingStartYear": 2014,
-  "TrainingEndYear": 2020,
-  "PredictStartYear": 2014,
-  "PredictEndYear": 2021,
-  
-  "CAMSPollutant": "PM10",
-  "E1bPollutant": "",
-  "eRepPollutant": "PM10"
-}
-example_context_args = context_args.copy()
-example_pipeline = DataPipeline.concat_pipelines(example_inputs_pipeline_as_text, output_pipeline_as_text)
-example_pipeline = DataPipeline.prepare_pipeline(example_pipeline, example_01_settings)
-
-# Run the Pipeline.
-pipeline_ob = GeoDataPipeline()
-temp_df = pipeline_ob.run_from_string(example_pipeline, factories={}, context_args=example_context_args)
-pipeline_ob = None
-
-# Show results.
-stack_ob = example_context_args['Stack']
-
-for object_name in [ 'ML_E1B_TRAINING_DATASET',
-                     'EREP_PREP_TABLE_0', 
-                     'EREP_PREP_TABLE_TRAINING_1', 'EREP_PREP_TABLE_VALIDATION_1', 
-                     'EREP_PREP_OVERLAPPING_TABLE', 
-                     'EREP_PREP_TABLE_TRAINING_2', 'EREP_PREP_TABLE_VALIDATION_2',
-                     'ML_EREP_TRAINING_DATASET',
-                     'ML_VALIDATION_DATASET' ]:
-    #
-    # Skipping the process, We can disable this "break" to test and getting results!
-    break
-    #
-    temp_df = stack_ob.get(object_name)
-    print('Table: "{}", Count: {}'.format(object_name, temp_df.count()))
-    display(temp_df)
-
-
-# COMMAND ----------
-
-# DBTITLE 1,Example 2 (Task #141263)
-
-"""
-============================================================================================
-Example 2: https://taskman.eionet.europa.eu/issues/141263
-============================================================================================
-
-User wants to generate data sets to perform ML training on measurement target for years 
-2016 - 2019 and BaP, using PM2.5 from CAMS as one of the input variables, and then 
-predict map for 2019-2020; user selects:
-
-- start year = 2016 and end year = 2019 for ML training,
-- start year = 2019 and end year = 2020 for ML validation and predictions,
-- CAMS pollutant: PM25_avg (cams_PM25),
-- target: E1b pollutant: empty,
-- target: AQ measurement pollutant: BaP_avg (bap_avg_eRep).
-
-"""
-
-# Set user settings of Pipeline part about inputs (MinMaxScaler operations, what input static data to use...).
-example_inputs_pipeline_as_text = inputs_pipeline_as_text
-for k,v in custom_settings.items():
-    example_inputs_pipeline_as_text = example_inputs_pipeline_as_text.replace("$"+k, v)
-
-example_02_settings = \
-{
-  "AdministrativeFilter": "",
-  "CitiesFilter": "",
-  
-  "TrainingStartYear": 2014,
-  "TrainingEndYear": 2020,
-  "PredictStartYear": 2014,
-  "PredictEndYear": 2021,
-  
-  "CAMSPollutant": "PM25",
-  "E1bPollutant": "",
-  "eRepPollutant": "PM25"
-}
-example_context_args = context_args.copy()
-example_pipeline = DataPipeline.concat_pipelines(example_inputs_pipeline_as_text, output_pipeline_as_text)
-example_pipeline = DataPipeline.prepare_pipeline(example_pipeline, example_02_settings)
-
-# Run the Pipeline.
-pipeline_ob = GeoDataPipeline()
-temp_df = pipeline_ob.run_from_string(example_pipeline, factories={}, context_args=example_context_args)
-pipeline_ob = None
-
-# DEBUGGING: Show data of temporary/internal Dataframes.
-stack_ob = example_context_args['Stack']
-
-for object_name in [ 'EREP_PREP_TABLE_0', 
-                     'EREP_PREP_TABLE_TRAINING_1', 'EREP_PREP_TABLE_VALIDATION_1', 
-                     'EREP_PREP_OVERLAPPING_TABLE', 
-                     'EREP_PREP_TABLE_TRAINING_2', 'EREP_PREP_TABLE_VALIDATION_2',
-                     'ML_EREP_TRAINING_DATASET',
-                     'ML_VALIDATION_DATASET' ]:
-    #
-    # Skipping the process, We can disable this "break" to test and getting results!
-    break
-    #
-    temp_df = stack_ob.get(object_name)
-    print('Table: "{}", Count: {}'.format(object_name, temp_df.count()))
-    display(temp_df)
-
-
-# COMMAND ----------
-
-# DBTITLE 1,Example 3 (Task #141263)
-
-"""
-============================================================================================
-Example 3: https://taskman.eionet.europa.eu/issues/141263
-============================================================================================
-
-User wants to generate data sets to perform ML training on modelling target for years 
-2016 - 2019 and NO2, using NO2 from CAMS as one of the input variables, and then predict 
-map for 2021; user selects:
-
-- start year = 2016 and end year = 2019 for ML training,
-- start year = 2021 and end year = 2021 for ML validation and predictions,
-- CAMS pollutant: NO2_avg (cams_NO2),
-- target: E1b pollutant: NO2_avg (e1b_NO2),
-- target: AQ measurement pollutant: NO2_avg (no2_avg_eRep).
-
-"""
-
-# Set user settings of Pipeline part about inputs (MinMaxScaler operations, what input static data to use...).
-example_inputs_pipeline_as_text = inputs_pipeline_as_text
-for k,v in custom_settings.items():
-    example_inputs_pipeline_as_text = example_inputs_pipeline_as_text.replace("$"+k, v)
-
-example_03_settings = \
-{
-  "AdministrativeFilter": "",
-  "CitiesFilter": "",
-  
-  "TrainingStartYear": 2014,
-  "TrainingEndYear": 2020,
-  "PredictStartYear": 2014,
-  "PredictEndYear": 2021,
-  
-  "CAMSPollutant": "NO2",
-  "E1bPollutant": "",
-  "eRepPollutant": "NO2"
-}
-example_context_args = context_args.copy()
-example_pipeline = DataPipeline.concat_pipelines(example_inputs_pipeline_as_text, output_pipeline_as_text)
-example_pipeline = DataPipeline.prepare_pipeline(example_pipeline, example_03_settings)
-
-# Run the Pipeline.
-pipeline_ob = GeoDataPipeline()
-temp_df = pipeline_ob.run_from_string(example_pipeline, factories={}, context_args=example_context_args)
-pipeline_ob = None
-
-# DEBUGGING: Show data of temporary/internal Dataframes.
-stack_ob = example_context_args['Stack']
-
-for object_name in [ 'ML_E1B_TRAINING_DATASET',
-                     'EREP_PREP_TABLE_0', 
-                     'EREP_PREP_TABLE_TRAINING_1', 'EREP_PREP_TABLE_VALIDATION_1', 
-                     'EREP_PREP_OVERLAPPING_TABLE', 
-                     'EREP_PREP_TABLE_TRAINING_2', 'EREP_PREP_TABLE_VALIDATION_2',
-                     'ML_EREP_TRAINING_DATASET',
-                     'ML_VALIDATION_DATASET' ]:
-    #
-    # Skipping the process, We can disable this "break" to test and getting results!
-    break
-    #
-    temp_df = stack_ob.get(object_name)
-    print('Table: "{}", Count: {}'.format(object_name, temp_df.count()))
-    display(temp_df)
-
-
-# COMMAND ----------
-
-# DBTITLE 1,Example 4 - testing
-
-"""
-============================================================================================
-Example 2: https://taskman.eionet.europa.eu/issues/141263
-============================================================================================
-
-User wants to generate data sets to perform ML training on measurement target for years 
-2016 - 2019 and PM2.5, using PM2.5 from CAMS as one of the input variables, and then 
-predict map for 2019-2020; user selects:
-
-- start year = 2016 and end year = 2019 for ML training,
-- start year = 2019 and end year = 2020 for ML validation and predictions,
-- CAMS pollutant: PM25_avg (cams_PM25),
-- target: E1b pollutant: empty,
-- target: AQ measurement pollutant: PM25_avg (pm25_avg_eRep).
-
-"""
-
-# Set user settings of Pipeline part about inputs (MinMaxScaler operations, what input static data to use...).
-example_inputs_pipeline_as_text = inputs_pipeline_as_text
-for k,v in custom_settings.items():
-    example_inputs_pipeline_as_text = example_inputs_pipeline_as_text.replace("$"+k, v)
-
-example_04_settings = \
-{
-  "AdministrativeFilter": "",
-  "CitiesFilter": "",
-  
-  "TrainingStartYear": 2014,
-  "TrainingEndYear": 2020,
-  "PredictStartYear": 2014,
-  "PredictEndYear": 2021,
-  
-  "CAMSPollutant": "O3",
-  "E1bPollutant": "",
-  "eRepPollutant": "O3_SOMO35"
-}
-example_context_args = context_args.copy()
-example_pipeline = DataPipeline.concat_pipelines(example_inputs_pipeline_as_text, output_pipeline_as_text)
-example_pipeline = DataPipeline.prepare_pipeline(example_pipeline, example_04_settings)
-
-# Run the Pipeline.
-pipeline_ob = GeoDataPipeline()
-temp_df = pipeline_ob.run_from_string(example_pipeline, factories={}, context_args=example_context_args)
-pipeline_ob = None
-
-# DEBUGGING: Show data of temporary/internal Dataframes.
-stack_ob = example_context_args['Stack']
-
-for object_name in [ 'EREP_PREP_TABLE_0', 
-                     'EREP_PREP_TABLE_TRAINING_1', 'EREP_PREP_TABLE_VALIDATION_1', 
-                     'EREP_PREP_OVERLAPPING_TABLE', 
-                     'EREP_PREP_TABLE_TRAINING_2', 'EREP_PREP_TABLE_VALIDATION_2',
-                     'ML_EREP_TRAINING_DATASET',
-                     'ML_VALIDATION_DATASET' ]:
-    #
-    # Skipping the process, We can disable this "break" to test and getting results!
-    break
-    #
-    temp_df = stack_ob.get(object_name)
-    print('Table: "{}", Count: {}'.format(object_name, temp_df.count()))
-    display(temp_df)
-
-
-# COMMAND ----------
-
-# DBTITLE 1,Example 5 - testing
-
-"""
-============================================================================================
-Example 2: https://taskman.eionet.europa.eu/issues/141263
-============================================================================================
-
-User wants to generate data sets to perform ML training on measurement target for years 
-2016 - 2019 and PM2.5, using PM2.5 from CAMS as one of the input variables, and then 
-predict map for 2019-2020; user selects:
-
-- start year = 2016 and end year = 2019 for ML training,
-- start year = 2019 and end year = 2020 for ML validation and predictions,
-- CAMS pollutant: PM25_avg (cams_PM25),
-- target: E1b pollutant: empty,
-- target: AQ measurement pollutant: PM25_avg (pm25_avg_eRep).
-
-"""
-
-# Set user settings of Pipeline part about inputs (MinMaxScaler operations, what input static data to use...).
-example_inputs_pipeline_as_text = inputs_pipeline_as_text
-for k,v in custom_settings.items():
-    example_inputs_pipeline_as_text = example_inputs_pipeline_as_text.replace("$"+k, v)
-
-example_05_settings = \
-{
-  "AdministrativeFilter": "",
-  "CitiesFilter": "",
-  
-  "TrainingStartYear": 2014,
-  "TrainingEndYear": 2020,
-  "PredictStartYear": 2014,
-  "PredictEndYear": 2021,
-  
-  "CAMSPollutant": "O3",
-  "E1bPollutant": "",
-  "eRepPollutant": "O3_SOMO10"
-}
-example_context_args = context_args.copy()
-example_pipeline = DataPipeline.concat_pipelines(example_inputs_pipeline_as_text, output_pipeline_as_text)
-example_pipeline = DataPipeline.prepare_pipeline(example_pipeline, example_05_settings)
-
-# Run the Pipeline.
-pipeline_ob = GeoDataPipeline()
-temp_df = pipeline_ob.run_from_string(example_pipeline, factories={}, context_args=example_context_args)
-pipeline_ob = None
-
-# DEBUGGING: Show data of temporary/internal Dataframes.
-stack_ob = example_context_args['Stack']
-
-for object_name in [ 'EREP_PREP_TABLE_0', 
-                     'EREP_PREP_TABLE_TRAINING_1', 'EREP_PREP_TABLE_VALIDATION_1', 
-                     'EREP_PREP_OVERLAPPING_TABLE', 
-                     'EREP_PREP_TABLE_TRAINING_2', 'EREP_PREP_TABLE_VALIDATION_2',
-                     'ML_EREP_TRAINING_DATASET',
-                     'ML_VALIDATION_DATASET' ]:
-    #
-    # Skipping the process, We can disable this "break" to test and getting results!
-    break
-    #
-    temp_df = stack_ob.get(object_name)
-    print('Table: "{}", Count: {}'.format(object_name, temp_df.count()))
-    display(temp_df)
-
-
-# COMMAND ----------
-
 # DBTITLE 1,Implementing & testing Pipeline declaration to save Outputs (Parquet files)
 
 # Pipeline declaration with the Dataflow to perform (As STRING).
@@ -1543,6 +1140,7 @@ serialize_pipeline_as_text = """
 }
 """
 
+spark.conf.set("spark.databricks.io.cache.enabled", "true")
 serialize_settings = \
 {
   "OutputFolder": "ML_Input"
@@ -1550,7 +1148,7 @@ serialize_settings = \
 
 # Process Pipeline of each example saving Output files.
 index = 0
-for settings_ob in [example_01_settings, example_02_settings, example_03_settings, example_04_settings, example_05_settings]:
+for settings_ob in settings:
     example_id = index + 1
     #
     # ########################### WARNING: Do we want to ignore the procesing of some Pipelines? please, edit this code...
@@ -1596,6 +1194,12 @@ print('Ok!')
 
 import glob
 import os
+
+spark.conf.set("spark.databricks.io.cache.enabled", "true")
+serialize_settings = \
+{
+  "OutputFolder": "ML_Input"
+}
 
 # Load Datasets just serialized...
 for index in range(0, 4):
