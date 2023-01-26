@@ -128,8 +128,13 @@ DEFAULT_CITIES_FILTER = ''
 DEFAULT_E1b_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25', 'BaP', 'O3_AOT40c', 'SO2']
 DEFAULT_eRep_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25',  'BaP','O3', 'O3_SOMO35', 'O3_AOT40c', 'SO2']
 
-DEFAULT_FEATURE_SUBSETS = ['eRep_NO2','GridNum1km','Year','AreaHa','avg_smallwoody_mean_sur','avg_imp2015_mean_sur','avg_hrlgrass','avg_fga2015_mean_sur','avg_eudem','sum_clc18_111_mean_sur','sum_clc18_121_mean_sur','sum_clc18_141_mean_sur',
-'sum_clc18_122_mean_sur','sum_clc18_211','sum_clc18_311_mean_sur','sum_clc18_312_mean_sur','sum_clc18_313_mean_sur','sum_elevbreak_Inlands','sum_elevbreak_Mountains','sum_urbdegree_30','sum_urbdegree_11_mean_sur','sum_urbdegree_12_mean_sur','sum_urbdegree_13_mean_sur','sum_envzones_LUS','sum_envzones_ATC','carbonseqcapacity_mean_sur','weight_urb','pop2018','windspeed_mean_sur','droughtimp_mean_sur','weight_tr_mean_sur','weight_tr','ecoclimaregions_28','biogeoregions_6','cams_NO2','eRep_PM25','max_smallwoody','max_imp2015', 'max_fga2015', 'std_eudem','sum_clc18_112','sum_clc18_211_mean_sur','sum_clc18_231','sum_clc18_523_mean_sur','sum_elevbreak_Low_coasts','sum_elevbreak_Uplands','sum_urbdegree_21_mean_sur','sum_envzones_BOR','sum_envzones_CON','weight_urb', 'weight_tr_mean_var_sur','ecoclimaregions_5','ecoclimaregions_7','biogeoregions_7','biogeoregions_4','climate_RR','climate_PP', 'climate_TX', 'cams_PM25','eRep_PM10','max_imp2015','max_fga2015','sum_clc18_231_mean_sur','sum_envzones_PAN','droughtimp','ecoclimaregions_1','climate_HU','climate_TG','climate_TX','cams_PM10','eRep_O3_SOMO35','GridNum1km','Year','AreaHa','p50_hrlgrass','max_eudem','sum_clc18_243_mean_sur','sum_clc18_323','sum_envzones_MDM','sum_envzones_MDN','sum_envzones_MDS','biogeoregions_9','biogeoregions_1','cams_O3','eRep_O3_SOMO10','GridNum1km','Year','AreaHa','cams_O3']
+DEFAULT_FEATURE_SUBSETS = ["GridNum1km","windspeed","weight_tr","weight_tr_mean_var_sur","weight_urb","pop2018","pop2018_mean_var_sur","min_imp2015","var_imp2015","avg_imp2015_mean_diff_sur","min_fga2015","max_fga2015",
+    "avg_fga2015_mean_sur","sum_urbdegree_12","sum_urbdegree_13","sum_urbdegree_21","sum_urbdegree_22","sum_urbdegree_30","sum_urbdegree_13_mean_sur","sum_urbdegree_21_mean_sur","sum_urbdegree_22_mean_sur",
+    "sum_urbdegree_12_mean_sur","var_eudem","avg_eudem_mean_diff_sur","avg_eudem_mean_sur","sum_clc18_211","sum_clc18_312","sum_clc18_311","sum_clc18_231","sum_clc18_313","sum_clc18_243","sum_clc18_242",
+    "sum_clc18_523","sum_clc18_121","sum_clc18_142","sum_clc18_111","sum_clc18_122","sum_clc18_141","sum_clc18_312_mean_sur","sum_clc18_311_mean_sur","sum_clc18_231_mean_sur","sum_clc18_313_mean_sur",
+    "sum_clc18_243_mean_sur","sum_clc18_242_mean_sur","sum_clc18_523_mean_sur","sum_clc18_121_mean_sur","sum_clc18_142_mean_sur","sum_clc18_111_mean_sur","sum_clc18_122_mean_sur","sum_clc18_141_mean_sur",
+    "droughtimp_mean_sur","soilorgcarbon_mean_sur","min_smallwoody","max_smallwoody","p50_smallwoody","var_smallwoody","avg_smallwoody_mean_sur","min_hrlgrass","max_hrlgrass","var_hrlgrass","p25_hrlgrass",
+    "sum_ripzones_20","sum_ripzones_3","sum_ripzones_4","sum_ripzones_8","sum_ripzones_2"]
 
 dbutils.widgets.text(name='TrainingStartYear', defaultValue=str(DEFAULT_TRAINING_START_YEAR), label='Training start year')
 dbutils.widgets.text(name='TrainingEndYear', defaultValue=str(DEFAULT_TRAINING_END_YEAR), label='Training end year')
@@ -1186,6 +1191,9 @@ print('Ok!')
 
 # COMMAND ----------
 
+temp_settings
+
+# COMMAND ----------
 
 import glob
 import os
@@ -1212,10 +1220,6 @@ for index in range(0, 4):
         
 print('OK!')
 
-
-# COMMAND ----------
-
-display(temp_df)
 
 # COMMAND ----------
 
