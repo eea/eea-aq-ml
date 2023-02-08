@@ -125,17 +125,87 @@ DEFAULT_PREDICT_END_YEAR = 2020
 DEFAULT_ADMINISTRATIVE_FILTER = ''
 DEFAULT_CAMS_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25', 'O3', 'O3_SOMO35', 'SO2']
 DEFAULT_CITIES_FILTER = ''
-DEFAULT_E1b_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25', 'BaP', 'O3_AOT40c', 'SO2']
+DEFAULT_E1b_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25', 'BaP', 'O3', 'SO2']
 DEFAULT_eRep_POLLUTANT_FILTER = ['NO2', 'PM10', 'PM25',  'BaP','O3', 'O3_SOMO35', 'O3_AOT40c', 'SO2']
 
-DEFAULT_FEATURE_SUBSETS = ['eRep_NO2','GridNum1km','Year','AreaHa','avg_smallwoody_mean_sur','avg_imp2015_mean_sur','avg_hrlgrass','avg_fga2015_mean_sur','avg_eudem','sum_clc18_111_mean_sur','sum_clc18_121_mean_sur','sum_clc18_141_mean_sur',
-'sum_clc18_122_mean_sur','sum_clc18_211','sum_clc18_311_mean_sur','sum_clc18_312_mean_sur','sum_clc18_313_mean_sur','sum_elevbreak_Inlands','sum_elevbreak_Mountains','sum_urbdegree_30','sum_urbdegree_11_mean_sur','sum_urbdegree_12_mean_sur','sum_urbdegree_13_mean_sur','sum_envzones_LUS','sum_envzones_ATC','carbonseqcapacity_mean_sur','weight_urb','pop2018','windspeed_mean_sur','droughtimp_mean_sur','weight_tr_mean_sur','weight_tr','ecoclimaregions_28','biogeoregions_6','cams_NO2','eRep_PM25','max_smallwoody','max_imp2015', 'max_fga2015', 'std_eudem','sum_clc18_112','sum_clc18_211_mean_sur','sum_clc18_231','sum_clc18_523_mean_sur','sum_elevbreak_Low_coasts','sum_elevbreak_Uplands','sum_urbdegree_21_mean_sur','sum_envzones_BOR','sum_envzones_CON','weight_urb', 'weight_tr_mean_var_sur','ecoclimaregions_5','ecoclimaregions_7','biogeoregions_7','biogeoregions_4','climate_RR','climate_PP', 'climate_TX', 'cams_PM25','eRep_PM10','max_imp2015','max_fga2015','sum_clc18_231_mean_sur','sum_envzones_PAN','droughtimp','ecoclimaregions_1','climate_HU','climate_TG','climate_TX','cams_PM10','eRep_O3_SOMO35','GridNum1km','Year','AreaHa','p50_hrlgrass','max_eudem','sum_clc18_243_mean_sur','sum_clc18_323','sum_envzones_MDM','sum_envzones_MDN','sum_envzones_MDS','biogeoregions_9','biogeoregions_1','cams_O3','eRep_O3_SOMO10','GridNum1km','Year','AreaHa','cams_O3']
+DEFAULT_FEATURE_SUBSETS = [ 
+'GridNum1km',
+'Year',
+'AreaHa',
+'avg_eudem',
+'avg_fga2015_mean_sur',
+'avg_hrlgrass',
+'avg_imp2015_mean_sur',
+'avg_smallwoody_mean_sur',
+'biogeoregions_1',
+'biogeoregions_4',
+'biogeoregions_6',
+'biogeoregions_7',
+'biogeoregions_9',
+'carbonseqcapacity_mean_sur',
+'climate_HU',
+'climate_PP',
+'climate_RR',
+'climate_TG',
+'climate_TX',
+'droughtimp',
+'droughtimp_mean_sur',
+'ecoclimaregions_1',
+'ecoclimaregions_28',
+'ecoclimaregions_5',
+'ecoclimaregions_7',
+'max_eudem',
+'max_fga2015',
+'max_imp2015',
+'max_smallwoody',
+'p50_hrlgrass',
+'pop2018',
+'std_eudem',
+'sum_clc18_111_mean_sur',
+'sum_clc18_112',
+'sum_clc18_121_mean_sur',
+'sum_clc18_122_mean_sur',
+'sum_clc18_141_mean_sur',
+'sum_clc18_211',
+'sum_clc18_211_mean_sur',
+'sum_clc18_231',
+'sum_clc18_231_mean_sur',
+'sum_clc18_243_mean_sur',
+'sum_clc18_311_mean_sur',
+'sum_clc18_312_mean_sur',
+'sum_clc18_313_mean_sur',
+'sum_clc18_323',
+'sum_clc18_523_mean_sur',
+'sum_elevbreak_Inlands',
+'sum_elevbreak_Low_coasts',
+'sum_elevbreak_Mountains',
+'sum_elevbreak_Uplands',
+'sum_envzones_ATC',
+'sum_envzones_BOR',
+'sum_envzones_CON',
+'sum_envzones_LUS',
+'sum_envzones_MDM',
+'sum_envzones_MDN',
+'sum_envzones_MDS',
+'sum_envzones_PAN',
+'sum_urbdegree_11_mean_sur',
+'sum_urbdegree_12_mean_sur',
+'sum_urbdegree_13_mean_sur',
+'sum_urbdegree_21_mean_sur',
+'sum_urbdegree_30',
+'weight_tr',
+'weight_tr_mean_sur',
+'weight_tr_mean_var_sur',
+'weight_urb',
+'windspeed_mean_sur',
+]
 
+dbutils.widgets.text(name='Description', defaultValue='', label='Description')
 dbutils.widgets.text(name='TrainingStartYear', defaultValue=str(DEFAULT_TRAINING_START_YEAR), label='Training start year')
 dbutils.widgets.text(name='TrainingEndYear', defaultValue=str(DEFAULT_TRAINING_END_YEAR), label='Training end year')
 dbutils.widgets.text(name='PredictStartYear', defaultValue=str(DEFAULT_PREDICT_START_YEAR), label='Predict start year')
 dbutils.widgets.text(name='PredictEndYear', defaultValue=str(DEFAULT_PREDICT_END_YEAR), label='Predict end year')
-dbutils.widgets.multiselect('FeatureSubsets', "GridNum1km", DEFAULT_FEATURE_SUBSETS, 'Feature subsets')
+dbutils.widgets.multiselect('FeatureSubsets', 'GridNum1km', DEFAULT_FEATURE_SUBSETS, 'Feature subsets')
 
 dbutils.widgets.text(name='AdministrativeFilter', defaultValue=str(DEFAULT_ADMINISTRATIVE_FILTER), label='Administrative Filter')
 dbutils.widgets.text(name='CitiesFilter', defaultValue=str(DEFAULT_CITIES_FILTER), label='Cities Filter')
@@ -158,12 +228,57 @@ PredictStartYear = dbutils.widgets.get('PredictStartYear')
 PredictEndYear = dbutils.widgets.get('PredictEndYear')
 FeatureSubsets = dbutils.widgets.get('FeatureSubsets')
 
+Description = dbutils.widgets.get('Description')
 AdministrativeFilter = dbutils.widgets.get('AdministrativeFilter')
 CitiesFilter = dbutils.widgets.get('CitiesFilter')
 CAMSPollutant = dbutils.widgets.get('CAMSPollutant').split(",")
 E1bPollutant = dbutils.widgets.get('E1bPollutant').split(",")
 eRepPollutant = dbutils.widgets.get('eRepPollutant').split(",")
 
+NO2Features = ['eRep_NO2', 'cams_NO2']
+PM25Features = ['eRep_PM25','cams_PM25']
+PM10Features = ['eRep_PM10','cams_PM10']
+O3SOMO10Features = ['eRep_O3_SOMO10','cams_O3',]
+O3SOMO35Features = ['eRep_O3_SOMO35','cams_O3']
+
+
+# Available list of Pollutants:
+# - CAMS: NO2, PM10, PM25, O3, O3_SOMO35, SO2.
+# - E1b: NO2, PM10, PM25, BaP, O3_AOT40c.
+# - AQ Measurements: NO2, PM10, PM25, O3, O3_SOMO35, O3_AOT40c, BaP, SO2.
+
+i = 0
+# Set Settings for the Pipeline
+settings = []
+for pollu in CAMSPollutant:    
+  
+  if pollu == 'NO2':
+    FeatureSubsets = [FeatureSubsets, NO2Features]
+  if pollu == 'PM10':
+    FeatureSubsets = [FeatureSubsets, PM10Features]
+  if pollu == 'PM25':
+    FeatureSubsets = [FeatureSubsets,  PM25Features]
+  if pollu == 'O3':
+    FeatureSubsets = [FeatureSubsets, O3SOMO10Features]
+  if pollu == 'O3_SOMO35':
+    FeatureSubsets = [FeatureSubsets, O3SOMO35Features]
+    
+  p = \
+  {
+    "AdministrativeFilter": AdministrativeFilter,
+    "CitiesFilter": CitiesFilter,
+
+    "TrainingStartYear": TrainingStartYear,
+    "TrainingEndYear": TrainingEndYear,
+    "PredictStartYear": PredictStartYear,
+    "PredictEndYear": PredictEndYear,
+
+    "CAMSPollutant": pollu,
+    "E1bPollutant": E1bPollutant[i],
+    "eRepPollutant": eRepPollutant[i]    
+  }
+  settings.append(p)
+  
 # Subset of fields of static data (VERSION-1), 
 # see VIF results in:
 # https://adb-2318633810729807.7.azuredatabricks.net/?o=2318633810729807#notebook/1664542031207191/command/1664542031207204
@@ -184,39 +299,6 @@ custom_settings = {
 }
 print(CAMSPollutant)
 
-
-# COMMAND ----------
-
-# DBTITLE 1,Settings of Input data
-
-# =======================================================================================
-# Define several examples of input parameters
-# =======================================================================================
-
-# Available list of Pollutants:
-# - CAMS: NO2, PM10, PM25, O3, O3_SOMO35, SO2.
-# - E1b: NO2, PM10, PM25, BaP, O3_AOT40c.
-# - AQ Measurements: NO2, PM10, PM25, O3, O3_SOMO35, O3_AOT40c, BaP, SO2.
-
-settings = []
-i = 0
-# Set Settings for the Pipeline
-for pollu in CAMSPollutant:  
-  p = \
-  {
-    "AdministrativeFilter": AdministrativeFilter,
-    "CitiesFilter": CitiesFilter,
-
-    "TrainingStartYear": TrainingStartYear,
-    "TrainingEndYear": TrainingEndYear,
-    "PredictStartYear": PredictStartYear,
-    "PredictEndYear": PredictEndYear,
-
-    "CAMSPollutant": pollu,
-    "E1bPollutant": E1bPollutant[i],
-    "eRepPollutant": eRepPollutant[i]    
-  }
-  settings.append(p)
   
 print(settings)
 
@@ -792,22 +874,22 @@ inputs_pipeline_as_text = """
       "Type": "Join",
       "Name": "LOOKUP_STATIC_JOIN",
       
-      "Left": "LOOKUP_INPUT",
+      "Left": "STATIC_INPUT" ,
       "LeftKey": "GridNum1km",
-      "Right": "STATIC_INPUT",
+      "Right": "LOOKUP_INPUT",
       "RightKey": "GridNum1km",
-      "JoinType": "inner"
+      "JoinType": "left"
     },
     # Joining CLIMATE and CAMS tables.
     {
       "Type": "Join",
       "Name": "CLIMATE_CAMS_JOIN",
 
-      "Left": "CLIMATE_INPUT",
+      "Left": "CAMS_INPUT",
       "LeftKey": [ "GridNum1km", "Year" ],
-      "Right": "CAMS_INPUT",
+      "Right": "CLIMATE_INPUT",
       "RightKey": [ "GridNum1km", "Year" ],
-      "JoinType": "inner"
+      "JoinType": "left"
     },
     # Joining LOOKUP, STATIC, CLIMATE and CAMS tables.
     {
@@ -817,7 +899,7 @@ inputs_pipeline_as_text = """
       "LeftKey": "GridNum1km",
       "Right": "CLIMATE_CAMS_JOIN",
       "RightKey": "GridNum1km",
-      "JoinType": "inner" 
+      "JoinType": "left" 
     },
     {
       "Type": "Filter",
@@ -835,7 +917,7 @@ inputs_pipeline_as_text = """
 }
 """.replace("$AQ_MEASUREMENT_DATA_QUERY", AQ_MEASUREMENT_DATA_QUERY)
     
-# print(inputs_pipeline_as_text)
+#print(inputs_pipeline_as_text)
 
 
 # COMMAND ----------
@@ -1047,7 +1129,7 @@ output_pipeline_as_text = """
 
 # COMMAND ----------
 
-# DBTITLE 1,Implementing & testing Pipeline declaration to save Outputs (Parquet files)
+# DBTITLE 1,Implementing & executing Pipeline declaration to save Outputs (Parquet files)
 
 # Pipeline declaration with the Dataflow to perform (As STRING).
 serialize_pipeline_as_text = """
@@ -1068,7 +1150,7 @@ serialize_pipeline_as_text = """
           
           "StorageAccount": "dis2datalake",
           "Container": "airquality-predictions",
-          "File": "$OutputFolder/$CurrentItem_$eRepPollutant_$PredictStartYear-$PredictEndYear/$CurrentDate/prediction_input_$eRepPollutant_$PredictStartYear-$PredictEndYear.parquet",
+          "File": "$OutputFolder/$CurrentItem/prediction_input_$eRepPollutant_$PredictStartYear-$PredictEndYear.parquet",
           
           "OutputEngine": "Spark"
         }
@@ -1091,7 +1173,7 @@ serialize_pipeline_as_text = """
               
               "StorageAccount": "dis2datalake",
               "Container": "airquality-predictions",
-              "File": "$OutputFolder/$CurrentItem_$eRepPollutant_$PredictStartYear-$PredictEndYear/$CurrentDate/training_input_e1b_$E1bPollutant_$TrainingStartYear-$TrainingEndYear.parquet",
+              "File": "$OutputFolder/$CurrentItem/training_input_e1b_$E1bPollutant_$TrainingStartYear-$TrainingEndYear.parquet",
               
               "OutputEngine": "Spark"
             }
@@ -1107,7 +1189,7 @@ serialize_pipeline_as_text = """
               
               "StorageAccount": "dis2datalake",
               "Container": "airquality-predictions",
-              "File": "$OutputFolder/$CurrentItem_$eRepPollutant_$PredictStartYear-$PredictEndYear/$CurrentDate/training_input_eRep_$eRepPollutant_$TrainingStartYear-$TrainingEndYear.parquet",
+              "File": "$OutputFolder/$CurrentItem/training_input_eRep_$eRepPollutant_$TrainingStartYear-$TrainingEndYear.parquet",
               
               "OutputEngine": "Spark"
             }
@@ -1123,7 +1205,7 @@ serialize_pipeline_as_text = """
               
               "StorageAccount": "dis2datalake",
               "Container": "airquality-predictions",
-              "File": "$OutputFolder/$CurrentItem_$eRepPollutant_$PredictStartYear-$PredictEndYear/$CurrentDate/validation_input_$eRepPollutant_$PredictStartYear-$PredictEndYear.parquet",
+              "File": "$OutputFolder/$CurrentItem/validation_input_$eRepPollutant_$PredictStartYear-$PredictEndYear.parquet",
               
               "OutputEngine": "Spark"
             }
@@ -1141,14 +1223,19 @@ serialize_settings = \
   "OutputFolder": "ML_Input"
 }
 
+current_date = datetime.datetime.now().strftime('%Y%m%d')
+fp = open('/dbfs/mnt/dis2datalake_airquality-predictions/{}/Execution_{}_readme.txt'.format(serialize_settings.get('OutputFolder'), current_date), 'w')
+fp.write(Description)
+fp.close()
+
 # Process Pipeline of each example saving Output files.
 index = 0
 for settings_ob in settings:
-    example_id = index + 1
+    data_id = index + 1
     #
     # ########################### WARNING: Do we want to ignore the procesing of some Pipelines? please, edit this code...
     """
-    if example_id != 4: 
+    if data_id != 4: 
         index = index + 1
         continue
     """
@@ -1156,17 +1243,28 @@ for settings_ob in settings:
     #
     temp_context_args = context_args.copy()
     
-    print('INFO: Run full Pipeline of Example {0:02d}...'.format(example_id))
+    print('INFO: Run full Pipeline of Data {0:02d}...'.format(data_id))
     
     # Set user settings of Pipeline part about inputs (MinMaxScaler operations, what input static data to use...).
     temp_inputs_pipeline_as_text = inputs_pipeline_as_text
     for k,v in custom_settings.items():
         temp_inputs_pipeline_as_text = temp_inputs_pipeline_as_text.replace("$"+k, v)
+        
+    count = 0
+    
+    file_pattern = '/dbfs/mnt/dis2datalake_airquality-predictions/{}/data-{}_{}-{}/'.format(serialize_settings.get('OutputFolder'), settings_ob['CAMSPollutant'], PredictStartYear, PredictEndYear)
+    
+    if os.path.isdir(file_pattern):
+        for path in os.listdir(file_pattern):
+            # check if current path is a file
+            if os.path.isdir(os.path.join(file_pattern, path)):
+                count += 1
+    print('File count:', count)   
     
     # Prepare settings.
     temp_settings = serialize_settings.copy()
-    temp_settings['CurrentItem'] = 'example-{0:02d}'.format(example_id)
-    temp_settings['CurrentDate'] = datetime.datetime.now().strftime('%Y%m%d')
+    temp_settings['CurrentDate'] = current_date
+    temp_settings['CurrentItem'] = 'data-{}_{}-{}/{}_v{}'.format(settings_ob['eRepPollutant'], PredictStartYear, PredictEndYear, current_date, count)
     for k,v in settings_ob.items(): temp_settings[k] = v
     
     temp_pipeline = DataPipeline.concat_pipelines(temp_inputs_pipeline_as_text, output_pipeline_as_text)
@@ -1182,41 +1280,4 @@ for settings_ob in settings:
     index = index + 1
     
 print('Ok!')
-
-
-# COMMAND ----------
-
-
-import glob
-import os
-
-spark.conf.set("spark.databricks.io.cache.enabled", "true")
-serialize_settings = \
-{
-  "OutputFolder": "ML_Input"
-}
-
-# Load Datasets just serialized...
-for index in range(0, 4):
-    current_date = datetime.datetime.now().strftime('%Y%m%d')
-    file_pattern = '/dbfs/mnt/dis2datalake_airquality-predictions/{}/example-{:02d}*/{}/*.parquet'.format(serialize_settings.get('OutputFolder'), index+1, current_date)
-    
-    print('------------------------------------------------------------------')
-    print('Tables of Example {:02d} (Date: {}):'.format(index+1, current_date))
-    print('------------------------------------------------------------------')
-    
-    for file_name in glob.glob(file_pattern, recursive=False):
-        temp_df = spark.read.parquet(file_name[5:])
-        print('> Table: "{}", Date: {}, Count: {}'.format(os.path.splitext(os.path.basename(file_name))[0], current_date, temp_df.count()))
-        display(temp_df)
-        
-print('OK!')
-
-
-# COMMAND ----------
-
-display(temp_df)
-
-# COMMAND ----------
-
 
