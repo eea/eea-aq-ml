@@ -1,8 +1,4 @@
 # Databricks notebook source
-
-
-# COMMAND ----------
-
 # Import EEA AQ Azure platform tools on Databricks.
 exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/eeadatabricksutils.py').read(), 'eeadatabricksutils.py', 'exec'))
 exec(compile(eea_databricks_framework_initialize(), '', 'exec'))
@@ -208,6 +204,17 @@ trainset = 'eRep' # 'e1b' -- modelled data, 'eRep' -- measurement data
 pollutants = ['PM10','PM25','O3_SOMO35','O3_SOMO10','NO2']
 dateOfInput = '20220826'
 frac = 1.0 # this is fraction of training data sampling for evaluation purpose, default is 1.0
+
+
+
+
+
+
+
+
+
+
+
 
 for pollutant in pollutants:
   
