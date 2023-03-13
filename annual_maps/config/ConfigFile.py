@@ -25,7 +25,7 @@ class MLModels:
     # Filter parameters depending on the ML model we are willing to use and its type (optimized vs test)
     if self.model_str == 'XGBRegressor()':
       # Select our OPTIMIZED parameters for XGBoost
-      if self.type_of_params == 'optimized':           # MODIFY ONLY IF YOU FOUND MORE OPTIMAL PARAMETERS
+      if self.type_of_params == 'optimized':           # MODIFY ONLY IF YOU FOUND BETTER PARAMETERS
         params = {'no2': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 0.3, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.7},
                   'pm10': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 5, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.8},
                   'pm25':{'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.2, 'reg_lambda': 5, 'subsample': 0.7},
@@ -74,22 +74,22 @@ class CollectData:
 class ColsPollutants:
   """Selected columns to include into our ML pipeline"""
   
-  no2 =  ['AreaHa',
+  no2 =  ['AreaHa',                           
           'GridNum1km',
           'Year',
-          'avg_eudem',
-          'avg_fga2015_mean_sur',
+          'avg_eudem',                                 # 2
+          'avg_fga2015_mean_sur',                      # 5
           'avg_hrlgrass',
-          'avg_imp2015_mean_sur',
+          'avg_imp2015_mean_sur',                      # 9
           'avg_smallwoody_mean_sur',
           'biogeoregions_6',
-          'cams_NO2',
+          'cams_NO2',                                  # 1
           'carbonseqcapacity_mean_sur',
           'droughtimp_mean_sur',
           'eRep_NO2',
           'ecoclimaregions_28',
-          'pop2018',
-          'sum_clc18_111_mean_sur',
+          'pop2018',                                   # 6
+          'sum_clc18_111_mean_sur',                    # 8
           'sum_clc18_121_mean_sur',
           'sum_clc18_122_mean_sur',
           'sum_clc18_141_mean_sur',
@@ -105,10 +105,10 @@ class ColsPollutants:
           'sum_urbdegree_12_mean_sur',
           'sum_urbdegree_13_mean_sur',
           'sum_urbdegree_30',
-          'weight_tr',
-          'weight_tr_mean_sur',
+          'weight_tr',                                  # 3
+          'weight_tr_mean_sur',                         # 4
           'weight_urb',
-          'windspeed_mean_sur']
+          'windspeed_mean_sur']                         # 7
   
   pm10 = ['AreaHa',
           'GridNum1km',
