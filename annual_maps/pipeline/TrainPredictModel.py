@@ -119,30 +119,30 @@ if (train_model == False) & (store_model == True): raise Exception('Set Train Mo
 
 # COMMAND ----------
 
-def split_data(df: pd.DataFrame, train_size:float=0.7, label:list=None):
-    """Splits training dataframe into training and test dataframes to train and validate ML models
-    Params
-    ------
-      :df: pd.DataFrame = data we are willing to use to train de model
-      :train_size: float = percentage of the dataframe we are willing to use to train
-      :label: list = contains the value/s willing to predict
+# def split_data(df: pd.DataFrame, train_size:float=0.7, label:list=None):
+#     """Splits training dataframe into training and test dataframes to train and validate ML models
+#     Params
+#     ------
+#       :df: pd.DataFrame = data we are willing to use to train de model
+#       :train_size: float = percentage of the dataframe we are willing to use to train
+#       :label: list = contains the value/s willing to predict
       
-    Returns
-    -------
-      :X_train: str = data the model will use to train 
-      :X_test: str = unseen data the model will use to make predictions
-      :Y_train: str = values the model will use with the training set to train its predictions
-      :Y_test: str = unseen values the model will try to predict
-  """
+#     Returns
+#     -------
+#       :X_train: str = data the model will use to train 
+#       :X_test: str = unseen data the model will use to make predictions
+#       :Y_train: str = values the model will use with the training set to train its predictions
+#       :Y_test: str = unseen values the model will try to predict
+#   """
 
-    # Separating values to be predicted from the data used to train
-    df_x = df[[col for col in df.columns if col not in label]]
-    df_y = df.select(label)
+#     # Separating values to be predicted from the data used to train
+#     df_x = df[[col for col in df.columns if col not in label]]
+#     df_y = df.select(label)
 
-    # Splitting the dataframe
-    X_train, X_test, Y_train, Y_test = model_selection.train_test_split(df_x, df_y, train_size=train_size, random_state=42)                        
+#     # Splitting the dataframe
+#     X_train, X_test, Y_train, Y_test = model_selection.train_test_split(df_x, df_y, train_size=train_size, random_state=42)                        
   
-    return X_train, X_test, Y_train, Y_test
+#     return X_train, X_test, Y_train, Y_test
   
   
 def train_predict_ml_model(train_model_flag:bool, store_model:bool, model, X_train_data:pd.DataFrame=None, Y_train_data:pd.DataFrame=None, X_test_data:pd.DataFrame=None):
@@ -253,10 +253,6 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
 
 # COMMAND ----------
 
-# GENERALIZAR: A la espera de confirmar los diferentes paths para train/validation/predict
-
-
-
 # Set input params for header
 collect_data = CollectData()
 file_system_path = header(collect_data.storage_account_name, collect_data.blob_container_name)
@@ -273,53 +269,46 @@ for pollutant in pollutants:
   for target in trainset:
     logging.info(f'Processing pollutant: {pollutant} target {target}.')
     label = [target + '_' + pollutant.upper()][0]
-
-    # Collecting cleansed data
-    path_to_training_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/training_input_{target}_{pollutant}_{train_start_year}-{train_end_year}.parquet'  
-    pollutant_train_data = parquet_reader(file_system_path, path_to_parket=path_to_training_parquet, cols_to_select=pollutant_cols).filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0))
-    path_to_val_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/validation_input_{pollutant}_{predval_start_year}-{predval_end_year}.parquet' 
-    pollutant_validation_data = parquet_reader(file_system_path, path_to_parket=path_to_val_parquet, cols_to_select=pollutant_cols).filter((pollutant_validation_data['Year'] >= predval_start_year) & (pollutant_validation_data['Year'] <= predval_end_year) & (pollutant_validation_data[label] > 0))
-    logging.info('Data pollutant collected! Checking for duplicated data among your training and validation datasets...')
-
-#     # Filtering data by date + data cleansing
-#     df_train = pollutant_train_data.filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0))
-#     df_validation = pollutant_validation_data.filter((pollutant_validation_data['Year'] >= predval_start_year) & (pollutant_validation_data['Year'] <= predval_end_year) & (pollutant_validation_data[label] > 0))
-    
-    duplicated_rows = find_duplicates(df1=df_train, df2=df_validation, cols_to_compare=cols_to_compare_duplicates)
-    logging.warning(f'There are duplicates in your training and validation set: {duplicated_rows}') if not duplicated_rows.rdd.isEmpty() else logging.info(f'There are no duplicates!')
-    
-    logging.info('Splitting data in train/test dataframes for ML training...')
-    df_train = df_train.drop('GridNum1km', 'Year','AreaHa').toPandas()                                           # Features not included in the model
-    df_validation = df_validation.drop('GridNum1km', 'Year','AreaHa').toPandas()                                           # Features not included in the model
-#     X_train, X_test, Y_train, Y_test = split_data(df=df_train, train_size=train_size, label=label)
-
-    
-#     df_validation = df_validation.filter(df_valdiation[label] > 0)                                                                            # Is it ok to avoid 0 values?? Despite we are training models by removing 0 values at label, I guess we never have actual 0 values for any pollutant
-    X_train = df_train[[col for col in df_train.columns if col not in label]] #.drop('GridNum1km', 'Year','AreaHa').toPandas()
-    Y_train = df_train[[label]] #.toPandas()
-    validation_X = df_validation[[col for col in df_validation.columns if col not in label]] #.drop('GridNum1km', 'Year','AreaHa').toPandas()
-    validation_Y = df_validation[[label]] #.toPandas()
-    logging.info(f'Data ready for training! Training & validating model with: \n{X_train.count()} \nPreparing ML model...')
-    
-    # Executing selected ML model
-    ml_models = MLModels(pollutant)
-    model_to_train, ml_params = ml_models.prepare_model()
-    logging.info(f'Preparing training model {ml_models.model_str} for pollutant {pollutant} and {type_of_params.upper()} params: {ml_params}') if train_model else logging.info('Loading latest pretrained model to make predictions...')
     
     if train_model:
-      # Training and predicting
-      trained_model, predictions = train_predict_ml_model(train_model_flag=True, store_model=store_model, model=model_to_train, X_train_data=X_train, Y_train_data=Y_train, X_test_data=validation_X)
+      # Collecting and cleaning data
+      path_to_training_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/training_input_{target}_{pollutant}_{train_start_year}-{train_end_year}.parquet'  
+      pollutant_train_data = parquet_reader(file_system_path, path_to_parket=path_to_training_parquet, cols_to_select=pollutant_cols)
+      pollutant_train_data = pollutant_train_data.filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0))
       
-#       # Validating training (we need to do this due to how we have structured our DB, delete when unified and modify train_test split size)
-#       logging.info(f'Validating model with: \n{df_validation.count()} \nPreparing ML model...')
-#       _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=trained_model, X_train_data=None, Y_train_data=None, X_test_data=validation_X)
+      path_to_val_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/validation_input_{pollutant}_{predval_start_year}-{predval_end_year}.parquet' 
+      pollutant_validation_data = parquet_reader(file_system_path, path_to_parket=path_to_val_parquet, cols_to_select=pollutant_cols)
+      pollutant_validation_data = pollutant_validation_data.filter((pollutant_validation_data['Year'] >= predval_start_year) & (pollutant_validation_data['Year'] <= predval_end_year) & (pollutant_validation_data[label] > 0))
+      logging.info('Data pollutant collected! Checking for duplicated data among your training and validation datasets...')
 
+      # Making sure we do not have duplicates among train and val datasets
+      duplicated_rows = find_duplicates(df1=pollutant_train_data, df2=pollutant_validation_data, cols_to_compare=cols_to_compare_duplicates)
+      logging.warning(f'There are duplicates in your training and validation set: {duplicated_rows}') if not duplicated_rows.rdd.isEmpty() else logging.info(f'There are no duplicates!')
+
+      # Preparing data for training/validating/predicting
+      df_train = pollutant_train_data.drop('GridNum1km', 'Year','AreaHa').toPandas()                                          
+      df_validation = pollutant_validation_data.drop('GridNum1km', 'Year','AreaHa').toPandas()                                         
+      X_train , Y_train = df_train[[col for col in df_train.columns if col not in label]], df_train[[label]] 
+      validation_X, validation_Y = df_validation[[col for col in df_validation.columns if col not in label]], df_validation[[label]]
+      logging.info(f'Data ready! Training & validating model with: \n{X_train.count()} \nPreparing ML model...')
+
+      # Executing selected ML model
+      ml_models = MLModels(pollutant)
+      model_to_train, ml_params = ml_models.prepare_model()
+      logging.info(f'Preparing training model {ml_models.model_str} for pollutant {pollutant} and {type_of_params.upper()} params: {ml_params}') if train_model else logging.info('Loading latest pretrained model to make predictions...')
+    
+      # Training model + validation
+      trained_model, predictions = train_predict_ml_model(train_model_flag=True, store_model=store_model, model=model_to_train, X_train_data=X_train, Y_train_data=Y_train, X_test_data=validation_X)
       results, rmse, mape, importance_scores = evaluate_model(trained_model, predictions, validation_Y)
 
     else:
-      model_name = f"{pollutant}_{ml_models.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"
+      # Prediction inputs data
+      path_to_prediction_parquet:str = f''  
+      pollutant_prediction_data = parquet_reader(file_system_path, path_to_parket=path_to_prediction_parquet, cols_to_select=pollutant_cols)
+      
       # Predicting data using a stored pretrained model
-      _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=model_name, X_train_data=None, Y_train_data=None, X_test_data=validation_X)
+      model_name = f"{pollutant}_{ml_models.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"
+      _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=model_name, X_train_data=None, Y_train_data=None, X_test_data=pollutant_prediction_data)
 
     
     
@@ -327,9 +316,6 @@ for pollutant in pollutants:
 # #  REMEMBER TO: Perform training with the whole dataset (training + validation + prediction sets) once we have the final model
 
 
-
-
-# We shouldn't be using a validation dataset since we are not using many hyperparameters (low risk of overfitting) nor many datapoints. Thus, we are losing amount of data we should be using for training. In case we still want to use validation dataset, we should not be splitting it in different dbs (not scalable). Store everything into the same database and split it as desired using the split function. Otherwise, how are we updating our db? we move part of the predicting db to the training and update the predicting with the new datapoints?????
 logging.info(f'Finished!')
 
 # COMMAND ----------

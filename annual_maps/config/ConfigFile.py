@@ -40,7 +40,7 @@ class MLModels:
                   'o3_somo_10': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
                   'o3_somo_35': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1}}
 
-    
+        
     # In case we did not configure a matching ML model
     else:
       print(f'There are no defined parameters for {self.model_str}')
