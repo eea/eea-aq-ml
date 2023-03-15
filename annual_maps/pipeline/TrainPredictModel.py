@@ -253,36 +253,29 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
 
 # COMMAND ----------
 
-# Set input params for header
-collect_data = CollectData()
-file_system_path = header(collect_data.storage_account_name, collect_data.blob_container_name)
+# collect_data = CollectData()
+# file_system_path = header(collect_data.storage_account_name, collect_data.blob_container_name)
+# print(file_system_path)
 
-cols_to_compare_duplicates = ['GridNum1km','Year']
+# COMMAND ----------
 
-selected_cols_pollutants = ColsPollutants()
-# train_size = 0.99                                         # Are we sure we want to split dataset by size? I think the split should follow a dates schema as we are working with cyclic and seasonal time series. We might be biasing the model if we do not provide whole seasons when we train the model 
-
-for pollutant in pollutants:      
-  # Selecting desired cols (*:all vs selected: TrainConfig file)
-  pollutant_cols =  eval('selected_cols_pollutants.'+pollutant.lower()) if features[0] == 'selected' else features 
-  # In case we have different target variables i.e.: eRep and e1b.
+for pollutant in pollutants:   
+  collect_data = CollectData(pollutant)
+  
+# In case we have different target variables i.e.: eRep and e1b.
   for target in trainset:
     logging.info(f'Processing pollutant: {pollutant} target {target}.')
     label = [target + '_' + pollutant.upper()][0]
     
     if train_model:
       # Collecting and cleaning data
-      path_to_training_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/training_input_{target}_{pollutant}_{train_start_year}-{train_end_year}.parquet'  
-      pollutant_train_data = parquet_reader(file_system_path, path_to_parket=path_to_training_parquet, cols_to_select=pollutant_cols)
+      pollutant_train_data, pollutant_validation_data = collect_data.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
       pollutant_train_data = pollutant_train_data.filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0))
-      
-      path_to_val_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/validation_input_{pollutant}_{predval_start_year}-{predval_end_year}.parquet' 
-      pollutant_validation_data = parquet_reader(file_system_path, path_to_parket=path_to_val_parquet, cols_to_select=pollutant_cols)
       pollutant_validation_data = pollutant_validation_data.filter((pollutant_validation_data['Year'] >= predval_start_year) & (pollutant_validation_data['Year'] <= predval_end_year) & (pollutant_validation_data[label] > 0))
       logging.info('Data pollutant collected! Checking for duplicated data among your training and validation datasets...')
 
       # Making sure we do not have duplicates among train and val datasets
-      duplicated_rows = find_duplicates(df1=pollutant_train_data, df2=pollutant_validation_data, cols_to_compare=cols_to_compare_duplicates)
+      duplicated_rows = find_duplicates(df1=pollutant_train_data, df2=pollutant_validation_data, cols_to_compare=['GridNum1km','Year'])
       logging.warning(f'There are duplicates in your training and validation set: {duplicated_rows}') if not duplicated_rows.rdd.isEmpty() else logging.info(f'There are no duplicates!')
 
       # Preparing data for training/validating/predicting
@@ -290,7 +283,7 @@ for pollutant in pollutants:
       df_validation = pollutant_validation_data.drop('GridNum1km', 'Year','AreaHa').toPandas()                                         
       X_train , Y_train = df_train[[col for col in df_train.columns if col not in label]], df_train[[label]] 
       validation_X, validation_Y = df_validation[[col for col in df_validation.columns if col not in label]], df_validation[[label]]
-      logging.info(f'Data ready! Training & validating model with: \n{X_train.count()} \nPreparing ML model...')
+      logging.info(f'Data ready! Training & validating model with: \n{X_train.count()} \n')
 
       # Executing selected ML model
       ml_models = MLModels(pollutant)
@@ -317,10 +310,6 @@ for pollutant in pollutants:
 
 
 logging.info(f'Finished!')
-
-# COMMAND ----------
-
-df_validation[[label]]
 
 # COMMAND ----------
 
