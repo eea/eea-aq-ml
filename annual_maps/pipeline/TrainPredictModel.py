@@ -25,7 +25,7 @@ dbutils.widgets.text(name='TrainEndDate', defaultValue=str(DEFAULT_TRAIN_END), l
 dbutils.widgets.text(name='PredValStartDate', defaultValue=str(DEFAULT_PREDVAL_START), label='Pred-Val Start Year')
 dbutils.widgets.text(name='PredValEndDate', defaultValue=str(DEFAULT_PREDVAL_END), label='Pred-Val End Year')
 dbutils.widgets.text(name='Version', defaultValue=str(DEFAULT_VERSION), label='Version')
-dbutils.widgets.text(name='DateOfInput', defaultValue=str(DEFAULT_DATE_OF_INPUT), label='Date of Input')                            # ?????????????????? do we need to check the db every time to get the dateofinput? otherwise, how could we know the path to the data we need?  # Idea generate a droprdown widget + listdir from db
+dbutils.widgets.text(name='DateOfInput', defaultValue=str(DEFAULT_DATE_OF_INPUT), label='Date of Input')                            # ? Check the db every time to get the dateofinput?  # Idea generate a droprdown widget + listdir from db
 
 dbutils.widgets.multiselect('Pollutants', 'PM10', DEFAULT_POLLUTANTS_LIST, label='Pollutants')
 dbutils.widgets.dropdown('Trainset', "eRep", DEFAULT_TRAINSET_LIST, label='Trainset')                         
@@ -253,12 +253,6 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
 
 # COMMAND ----------
 
-# collect_data = CollectData()
-# file_system_path = header(collect_data.storage_account_name, collect_data.blob_container_name)
-# print(file_system_path)
-
-# COMMAND ----------
-
 for pollutant in pollutants:   
   collect_data = CollectData(pollutant)
   
@@ -283,12 +277,12 @@ for pollutant in pollutants:
       df_validation = pollutant_validation_data.drop('GridNum1km', 'Year','AreaHa').toPandas()                                         
       X_train , Y_train = df_train[[col for col in df_train.columns if col not in label]], df_train[[label]] 
       validation_X, validation_Y = df_validation[[col for col in df_validation.columns if col not in label]], df_validation[[label]]
-      logging.info(f'Data ready! Training & validating model with: \n{X_train.count()} \n')
+      logging.info(f'Data is ready! Training & validating model with: \n{X_train.count()} \n')
 
       # Executing selected ML model
-      ml_models = MLModels(pollutant)
-      model_to_train, ml_params = ml_models.prepare_model()
-      logging.info(f'Preparing training model {ml_models.model_str} for pollutant {pollutant} and {type_of_params.upper()} params: {ml_params}') if train_model else logging.info('Loading latest pretrained model to make predictions...')
+      ml_models_config = MLModelsConfig(pollutant)
+      model_to_train, ml_params = ml_models_config.prepare_model()
+      logging.info(f'Preparing training model {ml_models_config.model_str} for pollutant {pollutant} and {type_of_params.upper()} params: {ml_params}') if train_model else logging.info('Loading latest pretrained model to make predictions...')
     
       # Training model + validation
       trained_model, predictions = train_predict_ml_model(train_model_flag=True, store_model=store_model, model=model_to_train, X_train_data=X_train, Y_train_data=Y_train, X_test_data=validation_X)
@@ -296,11 +290,10 @@ for pollutant in pollutants:
 
     else:
       # Prediction inputs data
-      path_to_prediction_parquet:str = f''  
-      pollutant_prediction_data = parquet_reader(file_system_path, path_to_parket=path_to_prediction_parquet, cols_to_select=pollutant_cols)
+      pollutant_prediction_data = collect_data.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
       
       # Predicting data using a stored pretrained model
-      model_name = f"{pollutant}_{ml_models.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"
+      model_name = f"{pollutant}_{ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"
       _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=model_name, X_train_data=None, Y_train_data=None, X_test_data=pollutant_prediction_data)
 
     
@@ -310,253 +303,6 @@ for pollutant in pollutants:
 
 
 logging.info(f'Finished!')
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC 
-# MAGIC # 4. Execute training with reference data
-
-# COMMAND ----------
-
-
-# # Set input params for header
-# collect_data = CollectData()
-# file_system_path = header(collect_data.storage_account_name, collect_data.blob_container_name)
-
-
-# path_to_reference_parquet:str = f'/ETC_maps/aq_grids_year_all_with2020.parquet'                    # Are we using this for anything???
-# cols_to_compare_duplicates = ['GridNum1km','Year']
-
-# selected_cols_pollutants = ColsPollutants()
-# train_size = 0.99                                                                                  # Are we sure we want to split dataset by size? I think the split should follow a dates schema as we are working with cyclic and seasonal time series. We might be biasing the model if we do not provide same seasons when we train the model 
-
-# for pollutant in pollutants:      
-
-#   # Loading reference data for pollutant
-#   reference_data = parquet_reader(file_system_path, path_to_reference_parquet, cols_to_select=['GridNum1km', 'Year', pollutant.lower()+'_avg']).withColumnRenamed(pollutant.lower()+'_avg', pollutant)                    # DELETE _avg. Why reference data has avg values for some pollutants and doesn't for others????????  
-  
-#   # Selecting desired cols (*:all vs selected: TrainConfig file)
-#   pollutant_cols =  eval('selected_cols_pollutants.'+pollutant.lower()) if features[0] == 'selected' else features 
-  
-#   # In case have different target variables i.e.: eRep and e1b.
-#   for target in trainset:
-#     logging.info(f'Processing pollutant: {pollutant} target {target}.')
-  
-#     # Reading parquet files
-#     path_to_training_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/training_input_{target}_{pollutant}_{train_start_year}-{train_end_year}.parquet'  
-#     pollutant_train_data = parquet_reader(file_system_path, path_to_parket=path_to_training_parquet, cols_to_select=pollutant_cols)
-
-#     path_to_validation_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/validation_input_{pollutant}_{predval_start_year}-{predval_end_year}.parquet' 
-#     pollutant_validation_data = parquet_reader(file_system_path, path_to_parket=path_to_validation_parquet, cols_to_select=pollutant_cols)
-#     logging.info('Data pollutant collected!')
-    
-#     # Checking duplicate rows between training and validation datasets
-#     duplicated_rows = find_duplicates(df1=pollutant_train_data, df2=pollutant_validation_data, cols_to_compare=cols_to_compare_duplicates)
-#     logging.warning(f'There are duplicates in your training and validation set: {duplicated_rows}') if not duplicated_rows.rdd.isEmpty() else logging.info(f'There are no duplicates!')
-
-#     logging.info('Filtering pollutant data for specified train/pred years and existing reference data...')
-#     dfref_train = reference_data.filter((reference_data['Year'] >= train_start_year) & (reference_data['Year'] <= train_end_year) & (reference_data[pollutant] > 0))
-#     dfref_val = reference_data.filter((reference_data['Year'] >= predval_start_year) & (reference_data['Year'] <= predval_end_year) & (reference_data[pollutant] > 0))   
-
-#     logging.info('Joining training and validation dataframes with the ETC datasets containing reference data...')
-#     dftrain = pollutant_train_data.join(dfref_train, ['GridNum1km', 'Year'], how="inner").drop('GridNum1km', 'Year','AreaHa')
-#     dfval = pollutant_validation_data.join(dfref_val, ['GridNum1km', 'Year'], how="inner").drop('GridNum1km', 'Year','AreaHa')
-
-#     logging.info('Splitting data in train/test dataframes for ML training...')
-#     label = [pollutant, target + '_' + pollutant.upper()]
-#     X_train_data, X_test_data, Y_train_data_ref, Y_test_data_ref = split_data(df=dftrain, train_size=train_size, label=label)
-
-#     # Splitting the target-reference data sets for training, cv and validation into separate datasets
-#     y_train_data = Y_train_data_ref[[target + '_' + pollutant]] # target for training error checks
-#     y_train_ref = Y_train_data_ref[[pollutant]] # reference for training error checks
-    
-#     y_test_data = Y_test_data_ref[[target + '_' + pollutant]]  # target for cv error checks
-#     y_test_ref = Y_test_data_ref[[pollutant]]  # reference for cv error checks
-
-#     y_val_train = dfval[[col for col in dfval.columns if col not in [target + '_' + pollutant, pollutant]]].toPandas()
-#     y_val_data = dfval[[target + '_' + pollutant]].toPandas()  # target for validation error checks
-#     y_val_ref = dfval[[pollutant]].toPandas()  # reference for validation error checks
-
-#     logging.info('Data ready for training! Preparing ML model...')
-#     # Executing selected ML model
-#     ml_models = MLModels(pollutant)
-#     model_to_train, ml_params = ml_models.prepare_model()
-#     logging.info(f'Training model {ml_models.model_str} for pollutant {pollutant} and {type_of_params} params: {ml_params}')
-
-#     # Execute training
-#     train_model = True
-#     trained_model, results, rmse = train_predict_ml_model(train_model, model_to_train, X_train_data, y_train_data, X_test_data, y_test_data)
-
-#     logging.info(f'Validating model {str(trained_model)} for pollutant {pollutant}')
-#     # Predict validation dataset
-#     train_model = False
-#     ml_model, results, rmse = train_predict_ml_model(train_model, trained_model, X_train_data=None, y_train_data=None, X_test_data=y_val_train, y_test_data=y_val_data)
-
-
-
-    
-    
-# #  Perform training with the whole dataset
-# # We shouldn't be using a validation dataset since we are not using many hyperparameters (low risk of overfitting) and hence we are losing amount of data we should be using for training. In case we still want to use validation dataset, we should not be splitting it in different dbs (not scalable). Store everything into the same database and split it as desired using the split function. Otherwise, how are we updating our db? we move part of the predicting db to the training and update the predicting with the new datapoints?????
-# logging.info(f'Finished!')
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-display(reference_data)
-print(reference_data.count())
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ### Learning curve on data amount vs training and cv errors   ---> Why are they doing this? training on 1% data??
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-# Generating input for learning curve on data amount vs training and cv errors: first view on bias & variance
-
-# Define main path to files
-path = aq_predictions_path + '/ML_Input/'
-#print(path)
-
-# Set parameters to read the input such as years, pollutant, input data set, etc.
-train_start_year = '2014'
-train_end_year = '2020'
-predval_start_year = '2014'
-predval_end_year = '2021'
-trainset = 'eRep' # 'e1b' -- modelled data, 'eRep' -- measurement data
-pollutant = 'O3_SOMO10' #,'PM10','PM25','O3_SOMO35','O3_SOMO10','NO2'
-dateOfInput = '20220826'
-frac = 1.0 # this is fraction of training data sampling for evaluation purpose, default is 1.0
-
-i = 0.01
-
-# Create the empty initial pandas DataFrame for storing the score changes with growing amount of data
-dfscores = pd.DataFrame({'rmse_train': [0], 'rmse_cv': [0], 'rmse_ref': [0], 'data':[0]} )
-
-lr,md,gm,al,la,sub = bestModelParameters(pollutant)
-model = XGBRegressor(learning_rate = lr, max_depth = md, gamma = gm, reg_alpha = al, reg_lambda = la, subsample = sub)
-
-while i <= 1.0:
-
-  #load data using loadAQMLData function with sample fraction defined by i
-  X_train, X_cv, X_val, y_train_ref, y_train, y_cv, y_cv_ref, y_val, y_val_ref = loadAQMLData(path,train_start_year,train_end_year,predval_start_year,predval_end_year,trainset,pollutant,dateOfInput,frac=i)
-  
-  # NN: fitting model to data
-#   model.fit(X_train,y_train,
-#     epochs=50)
-  
-  # SGD or XGB: fitting model to data
-  model.fit(X_train,y_train)
-  
-  #getting metrics for training data and reference data (reference y vs y_train)
-  rmse_train_ref, rmse_train = validateModel(model,X_train,y_train,y_train_ref)
-  #getting metrics for cv data and reference data (reference y vs y_cv)
-  rmse_cv_ref, rmse_cv = validateModel(model,X_cv,y_cv,y_cv_ref)
-  rmse_ref = (rmse_train_ref + rmse_cv_ref)/2
-    
-  dfscores = dfscores.append(pd.DataFrame({'rmse_train': [rmse_train], 'rmse_cv': [rmse_cv], 'rmse_ref': [rmse_ref], 'data':[i * 100]} ))
-  print('Calculations for : ' + str(i * 100) + ' % of data completed.')
-  
-  if i == 0.01:
-    i += 0.09
-  else:
-    i += 0.1
-    
-print('Calculations completed.')
-
-# COMMAND ----------
-
-
-
-# ML predictions
-
-# Define main path to files
-path = aq_predictions_path + '/ML_Input/'
-#print(path)
-
-# Set parameters to read the input such as years, pollutant, input data set, etc.
-train_start_year = '2014'
-train_end_year = '2020'
-predval_start_year = '2014'
-predval_end_year = '2021'
-trainset = 'eRep' # 'e1b' -- modelled data, 'eRep' -- measurement data
-pollutants = ['PM10','PM25','O3_SOMO35','O3_SOMO10','NO2']
-dateOfInput = '20220826'
-frac = 1.0 # this is fraction of training data sampling for evaluation purpose, default is 1.0
-
-
-
-
-
-
-
-
-
-
-
-
-for pollutant in pollutants:
-  
-  print('Pollutant: ' + pollutant)
-
-  # Load data, fit model and prep data for error calculations
-
-  X_train, X_cv, X_val, y_train, y_cv, y_val = loadAQMLDataValTrain(path,train_start_year,train_end_year,predval_start_year,predval_end_year,trainset,pollutant,dateOfInput)
-  lr,md,gm,al,la,sub = bestModelParameters(pollutant)
-  model = XGBRegressor(learning_rate = lr, max_depth = md, gamma = gm, reg_alpha = al, reg_lambda = la, subsample = sub)
-  model.fit(X_train,y_train)
-
-  X_pred = loadAQMLPredData(path,predval_start_year,predval_end_year,pollutant,dateOfInput)
-  predictions = model.predict(X_pred.iloc[:, 3:])
-
-  X_maps = X_pred.iloc[:, :2]
-  preds = pd.DataFrame({pollutant: predictions})
-  ML_maps = pd.concat([X_maps,preds], axis=1)
-  ML_maps_spark = spark.createDataFrame(ML_maps) 
-
-  file_name = '/dbfs' + aq_predictions_path+"/ML_Output/" + pollutant + "_" + predval_start_year + "_" + predval_end_year + "_" + dateOfInput+"_maps.parquet"
-  ML_maps_spark.toPandas().to_parquet(file_name, compression='snappy')
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 

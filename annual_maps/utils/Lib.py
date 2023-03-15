@@ -148,7 +148,3 @@ def find_duplicates(df1:pd.DataFrame, df2:pd.DataFrame, cols_to_compare:list=['*
 
 # pollutant_train_data, pollutant_validation_data = CollectData('PM10').data_collector(predval_start_year='2020', predval_end_year='2020', date_of_input='20230201', version='v0', target='eRep', train_start_year='2016', train_end_year='2019', features=['selected'])
 
-
-# COMMAND ----------
-
-
