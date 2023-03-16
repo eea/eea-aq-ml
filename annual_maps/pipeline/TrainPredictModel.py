@@ -4,6 +4,8 @@
 
 # COMMAND ----------
 
+# dbutils.widgets.removeAll()
+
 # Set default parameters for input widgets
 DEFAULT_TRAIN_START = '2016'
 DEFAULT_TRAIN_END = '2019'
@@ -35,10 +37,6 @@ dbutils.widgets.dropdown('StoreModel', 'NO', DEFAULT_STORE_MODEL_LIST, label='St
 dbutils.widgets.dropdown('TrainModel', 'NO', DEFAULT_TRAIN_MODEL_LIST, label='Train Model')  
 
 
-
-# COMMAND ----------
-
-# dbutils.widgets.removeAll()
 
 # COMMAND ----------
 
@@ -150,14 +148,15 @@ def train_predict_ml_model(train_model_flag:bool, store_model:bool, model, X_tra
     Params
     ------
       :train_model_flag: bool = Flag to execute/skip training. If False, only predictions will take place (useful when validation)
+      :store_model: bool = Flag to store (or not) the trained model into azure experiments.
       :model: [Object, str] = If we pass a string indicating the name of a model it will look for it at our azure experiments otherwise it will execute the input model
       :X_train_data: pd.DataFrame = data we are willing to use to train de model
       :Y_train_data: pd.DataFrame = label we are willing to use to predict on the training set
       :X_test_data: pd.DataFrame = data we are willing to use to make predictions
     Returns
-    -------
-      :predictions: pd.DataFrame = predictions performed by our model and its actual value
+    -------     
       :ml_model: float = score our model obtained
+      :predictions: pd.DataFrame = predictions performed by our model and its actual value
   """
     
     if train_model_flag:
@@ -204,7 +203,9 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
     Returns
     -------
       :results: pd.DataFrame = predictions performed by our model and its actual value
-      :rmse: float = score our model obtained
+      :rmse: float = standard deviation of the residuals predicted from our model
+      :mape: float = mean of the absolute percentage errors predicted from our model (note that bad predictions can lead to arbitrarily large MAPE values, especially if some y_true values are very close to zero.).
+      :importance_scores: float = score given to each feature from our model based on fscore (number of times a variable is selected for splitting, weighted by the squared improvement to the model as a result of each split, and averaged over all trees)
   """
 
     # Evaluating model
@@ -218,8 +219,8 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
     except:
       print('Pollutant and target names could not be found')
 
-    print(f"\n{pollutant}-{target} RMSE : {rmse}\n")
-    print(f"\n{pollutant}-{target} MAPE : {mape}\n")
+    print(f"\n{pollutant}-{target} RMSE : {round(rmse, 3)}\n")
+    print(f"\n{pollutant}-{target} MAPE : {round(mape, 3)}%\n")
 
     results = pd.concat([y_test_data.reset_index(drop=True), pd.DataFrame(predictions)], axis=1)
     results.columns = ['actual', 'forecasted']
@@ -233,7 +234,6 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
     plt.title('ML predict Errors distribution')
 
     try:
-      # Feature importance based on fscore (number of times a variable is selected for splitting, weighted by the squared improvement to the model as a result of each split, and averaged over all trees)
       fig, ax = plt.subplots(figsize=(12,12))
       plot_importance(ml_model, ax=ax)
       importance_scores = ml_model.get_booster().get_fscore()

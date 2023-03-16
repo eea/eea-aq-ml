@@ -4,6 +4,8 @@
 
 # COMMAND ----------
 
+# dbutils.widgets.removeAll()
+
 # Set default parameters for input widgets
 DEFAULT_TRAIN_START = '2020'
 DEFAULT_TRAIN_END = '2020'
@@ -18,12 +20,12 @@ DEFAULT_FEATURES_LIST = ['*', 'selected']
 DEFAULT_TYPE_DATA_LIST = ['training', 'validation', 'prediction']
 
 # Set widgets for notebook
-dbutils.widgets.text(name='TrainStartDate', defaultValue=str(DEFAULT_TRAIN_START), label='Train Start Year')                   # Despite we shouldn't be using split dates for feature selection, we do need them due to how is db constructed
+dbutils.widgets.text(name='TrainStartDate', defaultValue=str(DEFAULT_TRAIN_START), label='Train Start Year')                  
 dbutils.widgets.text(name='TrainEndDate', defaultValue=str(DEFAULT_TRAIN_END), label='Train End Year')
 dbutils.widgets.text(name='PredValStartDate', defaultValue=str(DEFAULT_PREDVAL_START), label='Pred-Val Start Year')
 dbutils.widgets.text(name='PredValEndDate', defaultValue=str(DEFAULT_PREDVAL_END), label='Pred-Val End Year')
 dbutils.widgets.text(name='Version', defaultValue=str(DEFAULT_VERSION), label='Version')
-dbutils.widgets.text(name='DateOfInput', defaultValue=str(DEFAULT_DATE_OF_INPUT), label='Date of Input')                            # ?????????????????? do we need to check the db every time to get the dateofinput? otherwise, how could we know the path to the data we need? # Idea generate a droprdown widget + listdir from db
+dbutils.widgets.text(name='DateOfInput', defaultValue=str(DEFAULT_DATE_OF_INPUT), label='Date of Input')                            # ? Check the db every time to get the dateofinput?  # Idea generate a droprdown widget + listdir from db
 
 dbutils.widgets.multiselect('Pollutants', 'NO2', DEFAULT_POLLUTANTS_LIST, label='Pollutants')
 dbutils.widgets.multiselect('Trainset', "eRep", DEFAULT_TRAINSET_LIST, label='Trainset')                         
@@ -54,7 +56,6 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from statsmodels.stats.outliers_influence import variance_inflation_factor
-
 
 # from importlib import reload
 # reload(logging)
@@ -181,44 +182,38 @@ def plot_corr_vif (corr_vif_features: pd.DataFrame, pollutant:str, target:str = 
 
 # COMMAND ----------
 
-# Set input params for header
-storage_account_name:str = 'dis2datalake'
-blob_container_name: str = 'airquality-predictions'
-file_system_path = header(storage_account_name, blob_container_name)
-
-# Iterating pollutants list to calculate and plot corr-VIF for every pollutant
-for pollutant in pollutants:
-  # Choose between working with all/selected features. If selected it will read cols from TrainConfig notebook
-  if features[0] == 'selected':
-    selected_cols_pollutants = ColsPollutants()
-    pollutant_selected_cols = eval('selected_cols_pollutants.'+pollutant.lower())
+for pollutant in pollutants:   
+  collect_data = CollectData(pollutant)
   
-  # We have two different target variables eRep and e1b.
+# In case we have different target variables i.e.: eRep and e1b.
   for target in trainset:
+    logging.info(f'Processing pollutant: {pollutant} target {target}.')
+    label = [target + '_' + pollutant.upper()][0]
+    # Collecting data
+    pollutant_train_data, pollutant_validation_data = collect_data.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
+    logging.info('Data pollutant collected!')
+
+
     try:
-      # Choose input data from training/validation/prediction
-      if type_of_data == 'training':
-        path_to_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/training_input_{target}_{pollutant}_{train_start_year}-{train_end_year}.parquet'  
-      if type_of_data == 'validation':
-        path_to_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/validation_input_{pollutant}_{predval_start_year}-{predval_end_year}.parquet' 
-      if type_of_data == 'prediction':
-        path_to_parquet:str = f'/ML_Input/data-{pollutant}_{predval_start_year}-{predval_end_year}/{date_of_input}_{version}/prediction_input_{pollutant}_{predval_start_year}-{predval_end_year}.parquet'    # Is it using predval_start_year and  predval_end_year ??????????????????
-        
-      logging.info(f'Processing pollutant: {pollutant.upper()}, target {target} based on {type_of_data.upper()} dataset')
-      # Reading parquret file
-      features_data = parquet_reader(file_system_path, path_to_parket=path_to_parquet, cols_to_select=pollutant_selected_cols)
-      logging.info(f'Features collected!')
-      
-      logging.info(f'Calculating Correlation and VIF...')
       # Excluding cols from corr-VIF analysis
       cols_to_exclude:list = ['GridNum1km','Year','AreaHa', target + '_' + pollutant.upper()] 
-      # Executing corr VIF analysis
-      corr_vif_features = get_corr_vif(features_data, cols_to_exclude=cols_to_exclude, target_col=target)
       
-      logging.info(f'Correlation and VIF calculated succesfully!')
-      logging.info(f'Plotting charts...')
+      # Choose input data from training/validation/prediction
+      if type_of_data == 'training':
+        # Cleaning data
+        features_data = pollutant_train_data.filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0)).cache()
+        
+      if type_of_data == 'validation':
+        # Cleaning data
+        features_data = pollutant_validation_data.filter((pollutant_validation_data['Year'] >= predval_start_year) & (pollutant_validation_data['Year'] <= predval_end_year) & (pollutant_validation_data[label] > 0)).cache()
+
+      logging.info(f'Calculating Correlation and VIF for {pollutant.upper()}, target {target} based on {type_of_data.upper()} dataset...')
+      corr_vif_features = get_corr_vif(features_data, cols_to_exclude=cols_to_exclude, target_col=target)
+
+      logging.info('Correlation and VIF calculated succesfully! Plotting charts...')
       plot_corr_vif(corr_vif_features, pollutant, target)
       
+      features_data.unpersist()
     except:
       if not features_data: logging.info(f'Something went wrong! Please, revisit input params...')
 
@@ -226,10 +221,6 @@ for pollutant in pollutants:
       
 logging.info(f'Finished!')
 
-
-
-
-# COMMAND ----------
 
 
 
