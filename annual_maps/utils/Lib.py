@@ -37,10 +37,11 @@ class CollectData(CollectDataConfig):
   
   def __init__(self, pollutant:str):
     
-    config = CollectDataConfig()
-    self.storage_account_name, self.blob_container_name, self.sas_key = config.select_container()
-    self.train_path_struct, self.validation_path_struct, self.prediction_path_struct = config.select_paths()
-    self.selected_cols_pollutants = config.select_cols(pollutant) if features[0]=='selected' else ['*']
+    self.config = CollectDataConfig()
+    self.storage_account_name, self.blob_container_name, self.sas_key = self.config.select_container()
+    self.train_path_struct, self.validation_path_struct, self.prediction_path_struct = self.config.select_paths()
+    self.selected_cols_pollutants = self.config.select_cols(pollutant) if features[0]=='selected' else ['*'] 
+
     self.pollutant = pollutant.upper()
 
     
@@ -122,9 +123,10 @@ class CollectData(CollectDataConfig):
       return train_data, validation_data
     
     else:
-      prediction_path, _ = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, predval_start_year, predval_end_year)
+      prediction_path, _ = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, None, None)
       
-      prediction_data = self.parquet_reader(file_system_path, prediction_path, self.selected_cols_pollutants)
+      self.selected_cols_pollutants = [col for col in self.selected_cols_pollutants if not (col.startswith('eRep') | col.startswith('e1b'))]
+      prediction_data = self.parquet_reader(file_system_path, prediction_path, features=self.selected_cols_pollutants)
       
       return prediction_data
 
@@ -152,4 +154,8 @@ def find_duplicates(df1:pd.DataFrame, df2:pd.DataFrame, cols_to_compare:list=['*
 # COMMAND ----------
 
 # pollutant_train_data, pollutant_validation_data = CollectData('PM10').data_collector(predval_start_year='2020', predval_end_year='2020', date_of_input='20230201', version='v0', target='eRep', train_start_year='2016', train_end_year='2019', features=['selected'])
+
+
+# COMMAND ----------
+
 

@@ -254,14 +254,15 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
 # COMMAND ----------
 
 for pollutant in pollutants:   
-  collect_data = CollectData(pollutant)
   
 # In case we have different target variables i.e.: eRep and e1b.
   for target in trainset:
     logging.info(f'Processing pollutant: {pollutant} target {target}.')
     label = [target + '_' + pollutant.upper()][0]
-    
+    ml_models_config = MLModelsConfig(pollutant)
     if train_model:
+      collect_data = CollectData(pollutant)
+
       # Collecting and cleaning data
       pollutant_train_data, pollutant_validation_data = collect_data.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
       pollutant_train_data = pollutant_train_data.filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0))
@@ -280,7 +281,6 @@ for pollutant in pollutants:
       logging.info(f'Data is ready! Training & validating model with: \n{X_train.count()} \n')
 
       # Executing selected ML model
-      ml_models_config = MLModelsConfig(pollutant)
       model_to_train, ml_params = ml_models_config.prepare_model()
       logging.info(f'Preparing training model {ml_models_config.model_str} for pollutant {pollutant} and {type_of_params.upper()} params: {ml_params}') if train_model else logging.info('Loading latest pretrained model to make predictions...')
     
@@ -289,16 +289,17 @@ for pollutant in pollutants:
       results, rmse, mape, importance_scores = evaluate_model(trained_model, predictions, validation_Y)
 
     else:
+      collect_data = CollectData(pollutant)
       # Prediction inputs data
       pollutant_prediction_data = collect_data.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
       
       # Predicting data using a stored pretrained model
       model_name = f"{pollutant}_{ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"
-      _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=model_name, X_train_data=None, Y_train_data=None, X_test_data=pollutant_prediction_data)
+      _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=model_name, X_train_data=None, Y_train_data=None, X_test_data=pollutant_prediction_data.toPandas())
 
     
     
-
+# Note if we add some more features/rows to the df, we will need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
 # #  REMEMBER TO: Perform training with the whole dataset (training + validation + prediction sets) once we have the final model
 
 
@@ -307,3 +308,50 @@ logging.info(f'Finished!')
 # COMMAND ----------
 
 
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+def get_output_file_name(root_folder: str, pollutant_key: str, operation: str, criteria: str, date: str):
+    """
+    Returns the Output file name of the new Aggregate CLIMATE Dataset.
+    """
+    date, y,m,d, w = parse_date_of_date(date)
+    criteria = criteria.upper()
+    
+    subfolder = '{}/{}/'.format(pollutant_key, y)
+    if criteria in ['MONTH','DAY']: subfolder += (m + '/')
+    if criteria in ['WEEK']: subfolder += 'Weeks/'
+    if criteria == 'YEAR' : file_name = 'CLIMATE_{}_{}_{}-XX-XX'.format(pollutant_key, operation.lower(), y)
+    if criteria == 'MONTH': file_name = 'CLIMATE_{}_{}_{}-{}-XX'.format(pollutant_key, operation.lower(), y, m)
+    if criteria == 'WEEK' : file_name = 'CLIMATE_{}_{}_{}-wk-{}'.format(pollutant_key, operation.lower(), y, w)
+    if criteria == 'DAY'  : file_name = 'CLIMATE_{}_{}_{}-{}-{}'.format(pollutant_key, operation.lower(), y, m, d)    
+    return '{}/{}{}.tiff'.format(root_folder, subfolder, file_name)
+
+# COMMAND ----------
+
+               
+                    # Output new raster file...
+                    raster_file = get_output_file_name(AGGR_TARGET_FOLDER, key, operation, criteria_arg['criteria'], downloading_date)
+                    print_message(logging.INFO, ' + Writing "{}"...'.format(raster_file), indent=1)
+                    #
+                    save_raster_to_file(raster_file=raster_file, raster=r, dataset_props=dataset_props, warp_to_eeagrid=True, resample_alg=GDAL_RESAMPLE_ALGORITHM)
+                    print_message(logging.INFO, 'Ok!', indent=2)
+                    #
+                    # Output as Parquet file...
+                    parquet_file = os.path.join(os.path.dirname(raster_file), os.path.splitext(os.path.basename(raster_file))[0] + '.parquet')
+                    print_message(logging.INFO, ' + Writing "{}"...'.format(parquet_file), indent=1)
+                    #
+                    dataset = gdal.Open(raster_file, gdal.GA_ReadOnly)
+                    temp_pd = raster_to_dataframe(dataset, column_name='climate_'+key, filter_nodata=True, valid_range=None)
+                    dataset = None
+                    temp_pd['GridNum1km'] = np.int64(CalcGridFunctions.calcgridnum_np(x=temp_pd['x'] - 500, y=temp_pd['y'] + 500))
+                    temp_pd['Year'] = np.int32(downloading_date[0:4])
+                    temp_pd.to_parquet(parquet_file, compression='snappy', index=False)
+                    temp_pd = None
+                    print_message(logging.INFO, 'Ok!', indent=2)
+                    
+            print_message(logging.INFO, 'Operation done! Files={}'.format(file_count), indent=1)
