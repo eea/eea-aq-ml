@@ -20,6 +20,7 @@ DEFAULT_FEATURES_LIST = ['*', 'selected']
 DEFAULT_PARAMS_LIST = ['optimized', 'test']
 DEFAULT_STORE_MODEL_LIST = ['YES', 'NO']
 DEFAULT_TRAIN_MODEL_LIST = ['YES', 'NO']
+DEFAULT_STORE_PREDICTIONS_LIST = ['YES', 'NO']
 
 # Set widgets for notebook
 dbutils.widgets.text(name='TrainStartDate', defaultValue=str(DEFAULT_TRAIN_START), label='Train Start Year')                  
@@ -35,7 +36,11 @@ dbutils.widgets.dropdown('Features', 'selected', DEFAULT_FEATURES_LIST, label='F
 dbutils.widgets.dropdown('TypeOfParams', 'optimized', DEFAULT_PARAMS_LIST, label='Type of params')  
 dbutils.widgets.dropdown('StoreModel', 'NO', DEFAULT_STORE_MODEL_LIST, label='Store Trained Model')  
 dbutils.widgets.dropdown('TrainModel', 'NO', DEFAULT_TRAIN_MODEL_LIST, label='Train Model')  
+dbutils.widgets.dropdown('StorePredictions', 'NO', DEFAULT_STORE_PREDICTIONS_LIST, label='Store Predictions')  
 
+
+# https://xgboost.readthedocs.io/en/stable/tutorials/spark_estimator.html
+# https://docs.databricks.com/_extras/notebooks/source/xgboost-pyspark.html
 
 
 # COMMAND ----------
@@ -100,9 +105,10 @@ features:list = dbutils.widgets.get('Features') if isinstance(dbutils.widgets.ge
 type_of_params:str = dbutils.widgets.get('TypeOfParams')
 train_model:bool = True if dbutils.widgets.get('TrainModel') == 'YES' else False
 store_model:bool = True if dbutils.widgets.get('StoreModel') == 'YES' else False
+store_predictions:bool = True if dbutils.widgets.get('StorePredictions') == 'YES' else False
 
 
-logging.info(f'Your chosen parameters: train_start_year: "{train_start_year}", train_end_year: "{train_end_year}", predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", features: {features}, type_of_params: "{type_of_params}", store_model: {store_model}, train_model: "{train_model}"')
+logging.info(f'Your chosen parameters: train_start_year: "{train_start_year}", train_end_year: "{train_end_year}", predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", features: {features}, type_of_params: "{type_of_params}", store_model: {store_model}, train_model: "{train_model}", store_predictions:"{store_predictions}"')
 
 if len(trainset)>1: logging.warning(f'You have chosen more than 1 values for Trainset: {trainset}')
 if (train_end_year < train_start_year) or (predval_end_year < predval_start_year): raise Exception('End dates cannot be earlier than starting dates. Double check!') 
@@ -261,15 +267,15 @@ for pollutant in pollutants:
     label = [target + '_' + pollutant.upper()][0]
     ml_models_config = MLModelsConfig(pollutant)
     if train_model:
-      collect_data = CollectData(pollutant)
+      data_handler = DataHandler(pollutant)
 
       # Collecting and cleaning data
-      pollutant_train_data, pollutant_validation_data = collect_data.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
+      pollutant_train_data, pollutant_validation_data = data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
       pollutant_train_data = pollutant_train_data.filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0))
       pollutant_validation_data = pollutant_validation_data.filter((pollutant_validation_data['Year'] >= predval_start_year) & (pollutant_validation_data['Year'] <= predval_end_year) & (pollutant_validation_data[label] > 0))
       logging.info('Data pollutant collected! Checking for duplicated data among your training and validation datasets...')
 
-      # Making sure we do not have duplicates among train and val datasets
+      # Making sure we do not have duplicates among training and validation datasets
       duplicated_rows = find_duplicates(df1=pollutant_train_data, df2=pollutant_validation_data, cols_to_compare=['GridNum1km','Year'])
       logging.warning(f'There are duplicates in your training and validation set: {duplicated_rows}') if not duplicated_rows.rdd.isEmpty() else logging.info(f'There are no duplicates!')
 
@@ -289,16 +295,23 @@ for pollutant in pollutants:
       results, rmse, mape, importance_scores = evaluate_model(trained_model, predictions, validation_Y)
 
     else:
-      collect_data = CollectData(pollutant)
+      data_handler = DataHandler(pollutant)
       # Prediction inputs data
-      pollutant_prediction_data = collect_data.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
+      pollutant_prediction_data, output_path = data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
       
       # Predicting data using a stored pretrained model
       model_name = f"{pollutant}_{ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"
-      _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=model_name, X_train_data=None, Y_train_data=None, X_test_data=pollutant_prediction_data.toPandas())
+      pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
+      _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=model_name, X_train_data=None, Y_train_data=None, X_test_data=pollutant_prediction_data_pd)
+      predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
+      ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
+      predictions_df = None
 
-    
-    
+      if store_predictions:
+        logging.info('Writing... ', output_path)
+        data_handler.parquet_storer(ml_outputs, output_path)
+        
+      ml_outputs = None
 # Note if we add some more features/rows to the df, we will need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
 # #  REMEMBER TO: Perform training with the whole dataset (training + validation + prediction sets) once we have the final model
 
@@ -307,51 +320,8 @@ logging.info(f'Finished!')
 
 # COMMAND ----------
 
-
-
-# COMMAND ----------
-
-
+output_path
 
 # COMMAND ----------
 
-def get_output_file_name(root_folder: str, pollutant_key: str, operation: str, criteria: str, date: str):
-    """
-    Returns the Output file name of the new Aggregate CLIMATE Dataset.
-    """
-    date, y,m,d, w = parse_date_of_date(date)
-    criteria = criteria.upper()
-    
-    subfolder = '{}/{}/'.format(pollutant_key, y)
-    if criteria in ['MONTH','DAY']: subfolder += (m + '/')
-    if criteria in ['WEEK']: subfolder += 'Weeks/'
-    if criteria == 'YEAR' : file_name = 'CLIMATE_{}_{}_{}-XX-XX'.format(pollutant_key, operation.lower(), y)
-    if criteria == 'MONTH': file_name = 'CLIMATE_{}_{}_{}-{}-XX'.format(pollutant_key, operation.lower(), y, m)
-    if criteria == 'WEEK' : file_name = 'CLIMATE_{}_{}_{}-wk-{}'.format(pollutant_key, operation.lower(), y, w)
-    if criteria == 'DAY'  : file_name = 'CLIMATE_{}_{}_{}-{}-{}'.format(pollutant_key, operation.lower(), y, m, d)    
-    return '{}/{}{}.tiff'.format(root_folder, subfolder, file_name)
 
-# COMMAND ----------
-
-               
-                    # Output new raster file...
-                    raster_file = get_output_file_name(AGGR_TARGET_FOLDER, key, operation, criteria_arg['criteria'], downloading_date)
-                    print_message(logging.INFO, ' + Writing "{}"...'.format(raster_file), indent=1)
-                    #
-                    save_raster_to_file(raster_file=raster_file, raster=r, dataset_props=dataset_props, warp_to_eeagrid=True, resample_alg=GDAL_RESAMPLE_ALGORITHM)
-                    print_message(logging.INFO, 'Ok!', indent=2)
-                    #
-                    # Output as Parquet file...
-                    parquet_file = os.path.join(os.path.dirname(raster_file), os.path.splitext(os.path.basename(raster_file))[0] + '.parquet')
-                    print_message(logging.INFO, ' + Writing "{}"...'.format(parquet_file), indent=1)
-                    #
-                    dataset = gdal.Open(raster_file, gdal.GA_ReadOnly)
-                    temp_pd = raster_to_dataframe(dataset, column_name='climate_'+key, filter_nodata=True, valid_range=None)
-                    dataset = None
-                    temp_pd['GridNum1km'] = np.int64(CalcGridFunctions.calcgridnum_np(x=temp_pd['x'] - 500, y=temp_pd['y'] + 500))
-                    temp_pd['Year'] = np.int32(downloading_date[0:4])
-                    temp_pd.to_parquet(parquet_file, compression='snappy', index=False)
-                    temp_pd = None
-                    print_message(logging.INFO, 'Ok!', indent=2)
-                    
-            print_message(logging.INFO, 'Operation done! Files={}'.format(file_count), indent=1)

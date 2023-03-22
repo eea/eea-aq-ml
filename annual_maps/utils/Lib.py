@@ -32,17 +32,19 @@ logging.getLogger("py4j").setLevel(logging.ERROR)
 
 # COMMAND ----------
 
-class CollectData(CollectDataConfig):
+class DataHandler(DataHandlerConfig):
   """Class containing all needed functions to collect data"""
   
   def __init__(self, pollutant:str):
     
-    self.config = CollectDataConfig()
+    self.config = DataHandlerConfig()
     self.storage_account_name, self.blob_container_name, self.sas_key = self.config.select_container()
-    self.train_path_struct, self.validation_path_struct, self.prediction_path_struct = self.config.select_paths()
+    self.train_path_struct, self.validation_path_struct, self.prediction_path_struct, self.output_path_struct = self.config.select_paths()
     self.selected_cols_pollutants = self.config.select_cols(pollutant) if features[0]=='selected' else ['*'] 
 
     self.pollutant = pollutant.upper()
+    
+    self.file_system_path = self.header()
 
     
   def header(self):
@@ -78,11 +80,12 @@ class CollectData(CollectDataConfig):
     
     else:
       prediction_path:str = self.prediction_path_struct.format(self.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.pollutant, predval_start_year, predval_end_year)
+      output_path:str = self.output_path_struct.format(self.pollutant, predval_start_year, predval_end_year, date_of_input)
       
-      return prediction_path, _
+      return prediction_path, output_path
 
     
-  def parquet_reader(self, file_system_path:str, path_to_parket:str, features:list=['*']):
+  def parquet_reader(self, path_to_parket:str, features:list=['*']):
     """Connects to the datasources and queries the desired parquet file to return a dataframe
     Params
     ------
@@ -95,10 +98,18 @@ class CollectData(CollectDataConfig):
       :temp_df_filtered: str = Dataframe stored in the target parquet file
     """
     
-    temp_df = spark.read.parquet(file_system_path+path_to_parket)
+    temp_df = spark.read.parquet(self.file_system_path+path_to_parket)
     temp_df_filtered = temp_df.select(self.selected_cols_pollutants)
     
     return temp_df_filtered
+  
+  
+  def parquet_storer(self, data:pd.DataFrame, path_to_store:str):
+    
+    data.to_parquet('/dbfs'+self.file_system_path+output_path, compression='snappy', index=False)
+    
+    
+    return None
   
   
   def data_collector(self, predval_start_year:str, predval_end_year:str, date_of_input:str, version:str, target:str, train_start_year:str, train_end_year:str, features:list=['*']):
@@ -113,22 +124,22 @@ class CollectData(CollectDataConfig):
       :prediction_data: str = Dataframe stored in the target parquet file
     """
       
-    file_system_path = self.header()
+#     file_system_path = self.header()
     if train_start_year:
       train_path, validation_path = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year)
       
-      train_data = self.parquet_reader(file_system_path, train_path, features)
-      validation_data = self.parquet_reader(file_system_path, validation_path, self.selected_cols_pollutants)
+      train_data = self.parquet_reader(train_path, features)
+      validation_data = self.parquet_reader( validation_path, self.selected_cols_pollutants)
       
       return train_data, validation_data
     
     else:
-      prediction_path, _ = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, None, None)
+      prediction_path, output_path = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, None, None)
       
       self.selected_cols_pollutants = [col for col in self.selected_cols_pollutants if not (col.startswith('eRep') | col.startswith('e1b'))]
-      prediction_data = self.parquet_reader(file_system_path, prediction_path, features=self.selected_cols_pollutants)
+      prediction_data = self.parquet_reader(prediction_path, features=self.selected_cols_pollutants)
       
-      return prediction_data
+      return prediction_data, output_path
 
 
 # COMMAND ----------

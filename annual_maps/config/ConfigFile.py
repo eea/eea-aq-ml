@@ -5,7 +5,7 @@ exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/fsutils.py').read(), '
 
 # COMMAND ----------
 
-class CollectDataConfig:
+class DataHandlerConfig:
   """Configuration to collect data.
       - You should only need to modify strings within this class
   """
@@ -27,8 +27,9 @@ class CollectDataConfig:
     train_path_struct: str = '/ML_Input/data-{}_{}-{}/{}_{}/training_input_{}_{}_{}-{}.parquet'        # pollutant, predval_start_year, predval_end_year, date_of_input, version, target, pollutant, train_start_year, train_end_year
     validation_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/validation_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
     prediction_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/prediction_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
-
-    return train_path_struct, validation_path_struct, prediction_path_struct
+    output_path_struct:str = '/ML_Output/{}_{}-{}_{}_maps_TEST.parquet'                                     # pollutant, predval_start_year, predval_end_year, date_of_input
+    
+    return train_path_struct, validation_path_struct, prediction_path_struct, output_path_struct
   
   
   @staticmethod
