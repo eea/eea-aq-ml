@@ -21,8 +21,16 @@ class DataHandlerConfig:
     return storage_account_name, blob_container_name, sas_key
   
   @staticmethod
-  def select_paths():
-    """Paths at our container storing our desired data
+  def select_preprocess_paths():
+    """Paths at our container storing our desired data for data preprocessing
+    """
+    path:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}.tiff'                                     # pollutant, year, month, pollutant, year, month, day
+    
+    return path
+  
+  @staticmethod
+  def select_ml_paths():
+    """Paths at our container storing our desired data for ML purposes
     """
     train_path_struct: str = '/ML_Input/data-{}_{}-{}/{}_{}/training_input_{}_{}_{}-{}.parquet'        # pollutant, predval_start_year, predval_end_year, date_of_input, version, target, pollutant, train_start_year, train_end_year
     validation_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/validation_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year

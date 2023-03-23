@@ -50,7 +50,7 @@ dbutils.widgets.dropdown('StorePredictions', 'NO', DEFAULT_STORE_PREDICTIONS_LIS
 
 # COMMAND ----------
 
-# MAGIC %run "../utils/Lib"
+# MAGIC %run "../utils/Lib1"
 
 # COMMAND ----------
 
@@ -159,6 +159,7 @@ def train_predict_ml_model(train_model_flag:bool, store_model:bool, model, X_tra
       :X_train_data: pd.DataFrame = data we are willing to use to train de model
       :Y_train_data: pd.DataFrame = label we are willing to use to predict on the training set
       :X_test_data: pd.DataFrame = data we are willing to use to make predictions
+      
     Returns
     -------     
       :ml_model: float = score our model obtained
@@ -199,13 +200,14 @@ def train_predict_ml_model(train_model_flag:bool, store_model:bool, model, X_tra
 
   
 
-def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame):
+def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame, bins:int=40):
     """It will plot some plots showing performance of the model and feature importances (fscore).
     Params
     ------
       :ml_model: Object = ML model we are willing to evaluate
       :predictions: pd.DataFrame = obtained predictions from our model
-      :y_test_data: pd.DataFrame = label we are willing to predict and will use to check performance of the model      
+      :y_test_data: pd.DataFrame = label we are willing to predict and will use to check performance of the model 
+      
     Returns
     -------
       :results: pd.DataFrame = predictions performed by our model and its actual value
@@ -214,7 +216,7 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
       :importance_scores: float = score given to each feature from our model based on fscore (number of times a variable is selected for splitting, weighted by the squared improvement to the model as a result of each split, and averaged over all trees)
   """
 
-    # Evaluating model
+    # Get scores for model predictions
     rmse = np.sqrt(mean_squared_error(y_test_data, predictions))
     mape = mean_absolute_percentage_error(y_test_data, predictions)
     try:
@@ -234,12 +236,14 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame)
     # Plotting lines for actuals vs forecasts data
     fig = px.line(results)
     fig.show()
-
+    
+    # Plot histogram showing errors in predictions
     diff_results = results.actual - results.forecasted
-    diff_results.hist()
+    diff_results.hist(bins=bins, figsize = (20,10))
     plt.title('ML predict Errors distribution')
 
     try:
+      # Feature importance of the trained model
       fig, ax = plt.subplots(figsize=(12,12))
       plot_importance(ml_model, ax=ax)
       importance_scores = ml_model.get_booster().get_fscore()
@@ -265,18 +269,18 @@ for pollutant in pollutants:
   for target in trainset:
     logging.info(f'Processing pollutant: {pollutant} target {target}.')
     label = [target + '_' + pollutant.upper()][0]
-    ml_models_config = MLModelsConfig(pollutant)
+    ml_models_config = MLModelsConfig(pollutant)                   # avoid and use it from datahandler???
     if train_model:
-      data_handler = DataHandler(pollutant)
+      ml_data_handler = MLDataHandler(pollutant)
 
       # Collecting and cleaning data
-      pollutant_train_data, pollutant_validation_data = data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
+      pollutant_train_data, pollutant_validation_data = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
       pollutant_train_data = pollutant_train_data.filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0))
       pollutant_validation_data = pollutant_validation_data.filter((pollutant_validation_data['Year'] >= predval_start_year) & (pollutant_validation_data['Year'] <= predval_end_year) & (pollutant_validation_data[label] > 0))
       logging.info('Data pollutant collected! Checking for duplicated data among your training and validation datasets...')
 
       # Making sure we do not have duplicates among training and validation datasets
-      duplicated_rows = find_duplicates(df1=pollutant_train_data, df2=pollutant_validation_data, cols_to_compare=['GridNum1km','Year'])
+      duplicated_rows = ml_data_handler.find_duplicates(df1=pollutant_train_data, df2=pollutant_validation_data, cols_to_compare=['GridNum1km','Year'])
       logging.warning(f'There are duplicates in your training and validation set: {duplicated_rows}') if not duplicated_rows.rdd.isEmpty() else logging.info(f'There are no duplicates!')
 
       # Preparing data for training/validating/predicting
@@ -292,12 +296,14 @@ for pollutant in pollutants:
     
       # Training model + validation
       trained_model, predictions = train_predict_ml_model(train_model_flag=True, store_model=store_model, model=model_to_train, X_train_data=X_train, Y_train_data=Y_train, X_test_data=validation_X)
-      results, rmse, mape, importance_scores = evaluate_model(trained_model, predictions, validation_Y)
+      results, rmse, mape, importance_scores = evaluate_model(trained_model, predictions, validation_Y, bins=100)
+      
+      # TODO: If everything is ok, add last step where joining trainning + validation datasets and retrain with the whole data.
 
     else:
-      data_handler = DataHandler(pollutant)
+      ml_data_handler = MLDataHandler(pollutant)
       # Prediction inputs data
-      pollutant_prediction_data, output_path = data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
+      pollutant_prediction_data, output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
       
       # Predicting data using a stored pretrained model
       model_name = f"{pollutant}_{ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"
@@ -306,12 +312,15 @@ for pollutant in pollutants:
       predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
       ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
       predictions_df = None
-
+      
       if store_predictions:
-        logging.info('Writing... ', output_path)
-        data_handler.parquet_storer(ml_outputs, output_path)
+        logging.info('Writing {}... '.format(output_path))
+        ml_data_handler.parquet_storer(ml_outputs, output_path)
         
-      ml_outputs = None
+#       ml_outputs = None
+      
+      
+      
 # Note if we add some more features/rows to the df, we will need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
 # #  REMEMBER TO: Perform training with the whole dataset (training + validation + prediction sets) once we have the final model
 
@@ -320,7 +329,69 @@ logging.info(f'Finished!')
 
 # COMMAND ----------
 
-output_path
+display(ml_outputs)
+
+# COMMAND ----------
+
+from pyspark.sql import SparkSession
+from pyspark.sql.types import LongType
+import pyspark.sql.functions as F
+
+
+# Import and register 'SQL AQ CalcGrid' functions.
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 'calcgrid.py', 'exec'))
+gridid2laea_x_udf = spark.udf.register('gridid2laea_x', CalcGridFunctions.gridid2laea_x, LongType())
+gridid2laea_y_udf = spark.udf.register('gridid2laea_y', CalcGridFunctions.gridid2laea_y, LongType())
+
+# Import EEA AQ Azure platform tools on Databricks.
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/eeadatabricksutils.py').read(), 'eeadatabricksutils.py', 'exec'))
+exec(compile(eea_databricks_framework_initialize(), '', 'exec'))
+
+# COMMAND ----------
+
+# spark_session.createDataFrame(ml_outputs)
+
+
+df_spark = spark.createDataFrame(ml_outputs)
+
+
+# COMMAND ----------
+
+# Adding XY location using 'GridNum1km' attribute (For didactical purpose).
+ml_outputs_df_xy = df_spark \
+                              .withColumnRenamed('x', 'x_old') \
+                              .withColumnRenamed('y', 'y_old') \
+                              .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+                              .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+  
+
+# COMMAND ----------
+
+display(ml_outputs_df_xy)
+
+# COMMAND ----------
+
+import pandas as pd
+import numpy as np
+import tifffile
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+my_map = FoliumUtils.create_folium_map_from_table(map_content_args={'table': ml_outputs_df_xy, 'attributes': [pollutant]})
+display(my_map)
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 
