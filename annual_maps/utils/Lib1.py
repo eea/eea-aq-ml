@@ -73,32 +73,18 @@ class DataHandler(DataHandlerConfig):
     Params
     ------
       :path_to_parket: str = Name of the parquet file storing the desired data
-      :cols_to_select: str = Columns' name we are willing to query
+      :features: str = Columns' name we are willing to query
 
     Returns
     -------
       :temp_df_filtered: str = Dataframe stored in the target parquet file
     """
-    temp_df = spark.read.parquet(self.file_system_path + path_to_parket)
+    
+    temp_df = spark.read.parquet(self.file_system_path+path_to_parket)
     temp_df_filtered = temp_df.select(features)
     
     return temp_df_filtered
     
-  
-  def parquet_storer(self, data:pd.DataFrame, path_to_store:str, compression:str='snappy', index:bool=False):
-    """Stores dataframe into parquet
-    Params
-    -------
-      :data: str = Dataframe containing data we are willing to store
-      :path_to_store: str = path to store our df
-      :compression: str = type of compression we are willing to use
-      :index: bool = willing to set new index or not
-    """
-    
-    data.to_parquet('/dbfs'+self.file_system_path+output_path, compression=compression, index=index)
-    
-    return None
-  
 
   def tiff_reader(self, path_to_tiff:str):
     """Connects to the datasources and loads the desired Geotiff file
@@ -108,7 +94,10 @@ class DataHandler(DataHandlerConfig):
 
     Returns
     -------
-      :dataset: str = dataset with the pollutant's data
+      :raster: array = values for the data at tiff 
+      :rasterXsize: int = size of raster
+      :transform: tuple = containing values used for the geotransformation
+      :no_data: str = missing data
     """
         
     # Convert tiff to GDAL dataset
@@ -124,6 +113,36 @@ class DataHandler(DataHandlerConfig):
     dataset = None
   
     return raster, rasterXsize, transform, no_data   
+  
+  
+  def parquet_storer(self, data:pd.DataFrame, output_path:str, compression:str='snappy', index:bool=False):                       
+    """Stores dataframe into parquet
+    Params
+    -------
+      :data: str = Dataframe containing data we are willing to store
+      :output_path: str = path to store our df
+      :compression: str = type of compression we are willing to use
+      :index: bool = willing to set new index or not
+    """
+    
+    data.to_parquet('/dbfs'+self.file_system_path+output_path, compression=compression, index=index)
+    
+    return None
+  
+  
+  def csv_storer(self, data:pd.DataFrame, output_path:str, compression:str='infer', index:bool=False):
+    """Stores dataframe into csv
+    Params
+    -------
+      :data: str = Dataframe containing data we are willing to store
+      :output_path: str = path to store our df
+      :compression: str = type of compression we are willing to use
+      :index: bool = willing to set new index or not
+    """
+    
+    data.to_csv('/dbfs'+self.file_system_path+output_path, compression=compression, index=index)
+    
+    return None
   
   
   @staticmethod
@@ -165,10 +184,14 @@ class MLDataHandler(DataHandler):
       train_path:str = self.train_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, target, self.data_handler.pollutant, train_start_year, train_end_year)
       validation_path:str = self.validation_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
 
+#       train_path:str = self.train_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, target, self.data_handler.pollutant, train_start_year, train_end_year)
+#       validation_path:str = self.validation_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, self.data_handler.pollutant, predval_start_year, predval_end_year)
+
       return train_path, validation_path
     
     else:
       prediction_path:str = self.prediction_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
+#       prediction_path:str = self.prediction_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, self.data_handler.pollutant, predval_start_year, predval_end_year)
       output_path:str = self.output_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input)
       
       return prediction_path, output_path
@@ -213,7 +236,7 @@ class PreProcessDataHandler(DataHandler):
   def __init__(self, pollutant:str):
 
     self.data_handler = DataHandler(pollutant)
-    self.preprocess_path_struct = self.data_handler.config.select_preprocess_paths()
+    self.preprocess_input_data_path, self.preprocess_output_data_path = self.data_handler.config.select_preprocess_paths()
     
   
   def build_path(self, date:str):
@@ -221,17 +244,18 @@ class PreProcessDataHandler(DataHandler):
     month = date.month if len(str(date.month))>1 else '0'+str(date.month)
     day = date.day if len(str(date.day))>1 else '0'+str(date.day)
 
-    path_to_tiff = self.preprocess_path_struct.format(self.data_handler.pollutant, year, month, self.data_handler.pollutant, year, month, day)
+    path_to_tiff = self.preprocess_input_data_path.format(self.data_handler.pollutant, year, month, self.data_handler.pollutant, year, month, day)
+    path_to_csv = self.preprocess_output_data_path.format(self.data_handler.pollutant, year, month, self.data_handler.pollutant, year, month, day)
 
-    return path_to_tiff
+    return path_to_tiff, path_to_csv
 
 
   def data_collector(self, date):
     
-    path_to_tiff = self.build_path(date)
+    path_to_tiff, path_to_csv = self.build_path(date)
     raster, rasterXsize, transform, no_data = self.data_handler.tiff_reader(path_to_tiff)
 
-    return raster, rasterXsize, transform, no_data
+    return raster, rasterXsize, transform, no_data, path_to_csv
     
     
 

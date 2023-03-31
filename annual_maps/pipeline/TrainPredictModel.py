@@ -5,6 +5,10 @@
 # COMMAND ----------
 
 # dbutils.widgets.removeAll()
+# 2023-03-27 10:39:34,607 INFO     Your chosen parameters: train_start_year: "2013", train_end_year: "2020", predval_start_year: "2013", predval_end_year: "2021", pollutants: ['PM10'], trainset: ['eRep'], date_of_input: "20220729", version: "v0", features: ['selected'], type_of_params: "optimized", store_model: False, train_model: "False", store_predictions:"False"
+
+# COMMAND ----------
+
 
 # Set default parameters for input widgets
 DEFAULT_TRAIN_START = '2016'
@@ -55,6 +59,32 @@ dbutils.widgets.dropdown('StorePredictions', 'NO', DEFAULT_STORE_PREDICTIONS_LIS
 # COMMAND ----------
 
 # MAGIC %run "../config/ConfigFile"
+
+# COMMAND ----------
+
+from pyspark.sql import SparkSession
+from pyspark.sql.types import LongType
+import pyspark.sql.functions as F
+
+
+# Import and register 'SQL AQ CalcGrid' functions.
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 'calcgrid.py', 'exec'))
+gridid2laea_x_udf = spark.udf.register('gridid2laea_x', CalcGridFunctions.gridid2laea_x, LongType())
+gridid2laea_y_udf = spark.udf.register('gridid2laea_y', CalcGridFunctions.gridid2laea_y, LongType())
+
+# Import EEA AQ Azure platform tools on Databricks.
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/eeadatabricksutils.py').read(), 'eeadatabricksutils.py', 'exec'))
+exec(compile(eea_databricks_framework_initialize(), '', 'exec'))
+
+from osgeo import gdal
+from osgeo import osr
+
+gdal.UseExceptions()
+gdal.SetConfigOption('GDAL_DISABLE_READDIR_ON_OPEN', 'TRUE')
+gdal.SetConfigOption('CPL_CURL_VERBOSE', 'NO')
+gdal.SetConfigOption('CPL_DEBUG', 'NO')
+gdal.SetConfigOption('CPL_VSIL_CURL_ALLOWED_EXTENSIONS', '.tif')
+
 
 # COMMAND ----------
 
@@ -149,7 +179,8 @@ if (train_model == False) & (store_model == True): raise Exception('Set Train Mo
 #     return X_train, X_test, Y_train, Y_test
   
   
-def train_predict_ml_model(train_model_flag:bool, store_model:bool, model, X_train_data:pd.DataFrame=None, Y_train_data:pd.DataFrame=None, X_test_data:pd.DataFrame=None):
+# def train_predict_ml_model(train_model_flag:bool, store_model:bool, model, X_train_data:pd.DataFrame=None, Y_train_data:pd.DataFrame=None, X_test_data:pd.DataFrame=None):
+def train_load_ml_model(train_model_flag:bool, model, X_train_data:pd.DataFrame=None, Y_train_data:pd.DataFrame=None):
     """Trains a ML model and/or predicts data. It will store/load a ML model to/from azure experiments or execute the input model.
     Params
     ------
@@ -168,37 +199,40 @@ def train_predict_ml_model(train_model_flag:bool, store_model:bool, model, X_tra
     
     if train_model_flag:
       print('Training model...')
-      with mlflow.start_run():
-        mlflow.autolog()
-        # Training model with the input data      
-        ml_model = model.fit(X_train_data, Y_train_data)
-        if store_model:
-          run_id = mlflow.active_run().info.run_id
-          print('Registering model...')
-          # The default path where the MLflow autologging function stores the model
-          artifact_path = "model"
-          model_uri = "runs:/{run_id}/{artifact_path}".format(run_id=run_id, artifact_path=artifact_path)
-          model_details = mlflow.register_model(model_uri=model_uri, name=model_name)
+#       with mlflow.start_run():
+#         mlflow.autolog()
+      # Training model with the input data  
+      model_name = model['model_name']
+      ml_model = model['model_to_train'].fit(X_train_data, Y_train_data)
+#         if store_model:
+#           run_id = mlflow.active_run().info.run_id
+#           print('Registering model...')
+#           # The default path where the MLflow autologging function stores the model
+#           artifact_path = "model"
+#           model_uri = "runs:/{run_id}/{artifact_path}".format(run_id=run_id, artifact_path=artifact_path)
+#           model_details = mlflow.register_model(model_uri=model_uri, name=model_name)
   
     else:
       if isinstance(model, str):
         print('Loading and executing stored model...')
         client = mlflow.tracking.MlflowClient()
-        latest_version = client.get_latest_versions(model_name)
+        latest_version = client.get_latest_versions(model)
         print('Loading latest version of your pretrained models: ', latest_version)
         ml_model = mlflow.pyfunc.load_model(latest_version[0].source)
         
       else:
         print('Executing trained model...')
-        ml_model = model
+        ml_model = model['model_to_train']
         
 
-    print('Performing predictions...')
-    predictions = ml_model.predict(X_test_data)
+#     print('Performing predictions...')
+#     predictions = ml_model.predict(X_test_data)
 
-    return ml_model, predictions
+#     return ml_model, predictions
 
-  
+    return ml_model
+
+
 
 def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame, bins:int=40):
     """It will plot some plots showing performance of the model and feature importances (fscore).
@@ -254,6 +288,133 @@ def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame,
 
     return results, rmse, mape, importance_scores
 
+  
+def write_dataset_to_raster(raster_file, dataset, attribute, x_attrib='x', y_attrib='y',
+                            driver_name='Gtiff', srid=3035, bbox=None, pixel_size_x=1000.0, pixel_size_y=1000.0, no_data=-9999,
+                            options=['COMPRESS=DEFLATE', 'TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256']):
+    """
+    Write to raster file the specified Dataset object and parameters.
+    """
+    is_a_dataframe = hasattr(dataset, 'select')
+    
+    import tempfile
+    import uuid
+    import os
+    import numpy as np
+    
+    temp_name = str(uuid.uuid1()).replace('-', '')
+    columns = dataset.columns
+    for c in [x_attrib, y_attrib, attribute]:
+        if c not in columns: raise Exception('The Dataset does not contain the "{}" attribute.'.format(c))
+              
+    # DataType codes (For Numpy & Spark) of available data-types of a GDAL Dataset.
+    GDT_DataTypeCodes = dict([
+        ('unknown', gdal.GDT_Unknown),
+        ('byte', gdal.GDT_Byte),
+        ('uint8', gdal.GDT_Byte),
+        ('uint16', gdal.GDT_UInt16), ('int16', gdal.GDT_Int16),
+        ('uint32', gdal.GDT_UInt32), ('int32', gdal.GDT_Int32), ('int64', gdal.GDT_Float64),
+        ('float32', gdal.GDT_Float32), ('float64', gdal.GDT_Float64),
+        ('cint16', gdal.GDT_CInt16), ('cint32', gdal.GDT_CInt32), ('cfloat32', gdal.GDT_CFloat32),
+        ('cfloat64', gdal.GDT_CFloat64)
+    ])
+    SPK_DataTypeCodes = dict([
+        ('unknown', gdal.GDT_Unknown),
+        ('byte', gdal.GDT_Byte),
+        ('sort', gdal.GDT_Int16),
+        ('int', gdal.GDT_Int32),
+        ('bigint', gdal.GDT_Float64),
+        ('long', gdal.GDT_Float64),
+        ('float', gdal.GDT_Float32),
+        ('double', gdal.GDT_Float64),
+    ])
+    if is_a_dataframe:
+        data_type = str(dataset.select(attribute).dtypes[0][1])
+        data_format = SPK_DataTypeCodes[data_type]
+    else:
+        data_type = str(dataset[attribute].dtypes)
+        data_format = GDT_DataTypeCodes[data_type]
+            
+    # Calculate current CRS.
+    spatial_ref = osr.SpatialReference()
+    spatial_ref.ImportFromEPSG(srid)
+    if hasattr(spatial_ref, 'SetAxisMappingStrategy'): spatial_ref.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    
+    # Calculate current BBOX when not specified, taking care of input Dataset object type.
+    if bbox is None and is_a_dataframe:
+        dataset.createOrReplaceTempView(temp_name)
+        envelope_df = spark.sql('SELECT MIN({}) as x_min, MIN({}) as y_min, MAX({}) as x_max, MAX({}) as y_max FROM {}'.format(x_attrib, y_attrib, x_attrib, y_attrib, temp_name))
+        temp_df = envelope_df.collect()[0]
+        x_min, y_min, x_max, y_max = temp_df[0], temp_df[1], temp_df[2], temp_df[3]
+        spark.catalog.dropTempView(temp_name)
+        bbox = [x_min, y_min, x_max, y_max]
+    if bbox is None and not is_a_dataframe:
+        temp_df = dataset[[x_attrib, y_attrib]].min(axis=0)
+        x_min, y_min = temp_df['x'], temp_df['y']
+        temp_df = dataset[[x_attrib, y_attrib]].max(axis=0)
+        x_max, y_max = temp_df['x'], temp_df['y']
+        bbox = [x_min, y_min, x_max, y_max]
+        
+    n_cols = 1 + ((bbox[2] - bbox[0]) / pixel_size_x)
+    n_rows = 1 + ((bbox[3] - bbox[1]) / pixel_size_y)
+    n_cols = int(n_cols)
+    n_rows = int(n_rows)
+    
+    # Append INDEX for each cell, for matching the INDEX/VALUE pairs when filling the target np.array.
+    if is_a_dataframe:
+        import pyspark.sql.functions as F
+        from pyspark.sql.types import LongType
+        
+        dataset = dataset \
+            .withColumn('idx_', (((F.lit(bbox[3]) - F.col(y_attrib)) / F.lit(pixel_size_y)) * F.lit(n_cols)) + ((F.col(x_attrib) - F.lit(bbox[0])) / F.lit(pixel_size_x))) \
+            .withColumn('idx_', F.col('idx_').cast(LongType()))
+    else:
+        dataset['idx_'] = \
+            (((bbox[3] - dataset[y_attrib]) / pixel_size_y) * n_cols) + ((dataset[x_attrib] - bbox[0]) / pixel_size_x)
+        
+    # Write raster file using a temporary folder, we'll copy it to output path later.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file = os.path.join(temp_dir, temp_name) + os.path.splitext(raster_file)[1]
+        
+        driver = gdal.GetDriverByName(driver_name)
+        raster = driver.Create(temp_file, n_cols, n_rows, 1, data_format, options=options)
+        raster.SetGeoTransform([bbox[0] - 0.5*pixel_size_x, pixel_size_x, 0.0, bbox[3] + 0.5*pixel_size_y, 0.0, -pixel_size_y])
+        raster.SetProjection(spatial_ref.ExportToWkt())
+        raster_band = raster.GetRasterBand(1)
+        raster_band.SetNoDataValue(no_data)
+        
+        # Write values (Using the 'INDEX' attribute as row/col locator of Cells).
+        if is_a_dataframe:
+            temp_np = dataset.select(['idx_', attribute]).toPandas()
+            indx_np = temp_np['idx_']
+            data_np = temp_np[attribute]
+            
+            r_array = np.full((n_rows * n_cols), no_data, dtype=data_type)
+            np.put(r_array, indx_np, data_np)
+            raster_band.WriteArray(r_array.reshape(n_rows, n_cols))
+            del r_array
+        else:
+            indx_np = dataset['idx_']
+            data_np = dataset[attribute]
+            
+            r_array = np.full((n_rows * n_cols), no_data, dtype=data_type)
+            np.put(r_array, indx_np, data_np)
+            raster_band.WriteArray(r_array.reshape(n_rows, n_cols))
+            del r_array
+            
+        raster_band = None
+        raster.FlushCache()
+        raster = None
+        
+        # Copy the temporary raster file to output path.
+        if raster_file.startswith('/dbfs'):
+            final_file = raster_file[5:]
+            dbutils.fs.cp('file:' + temp_file, 'dbfs:' + final_file)
+        else:
+            import shutil
+            shutil.copy2(temp_file, raster_file)
+            
+    return raster_file
 
 # COMMAND ----------
 
@@ -269,9 +430,11 @@ for pollutant in pollutants:
   for target in trainset:
     logging.info(f'Processing pollutant: {pollutant} target {target}.')
     label = [target + '_' + pollutant.upper()][0]
-    ml_models_config = MLModelsConfig(pollutant)                   # avoid and use it from datahandler???
+    ml_models_config = MLModelsConfig(pollutant, type_of_params)                  
+    
     if train_model:
       ml_data_handler = MLDataHandler(pollutant)
+      logging.info('Training model...')
 
       # Collecting and cleaning data
       pollutant_train_data, pollutant_validation_data = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
@@ -288,36 +451,82 @@ for pollutant in pollutants:
       df_validation = pollutant_validation_data.drop('GridNum1km', 'Year','AreaHa').toPandas()                                         
       X_train , Y_train = df_train[[col for col in df_train.columns if col not in label]], df_train[[label]] 
       validation_X, validation_Y = df_validation[[col for col in df_validation.columns if col not in label]], df_validation[[label]]
-      logging.info(f'Data is ready! Training & validating model with: \n{X_train.count()} \n')
+      if not store_model: logging.info(f'Data is ready! Training & validating model with: \n{X_train.count()} \n') 
 
       # Executing selected ML model
       model_to_train, ml_params = ml_models_config.prepare_model()
       logging.info(f'Preparing training model {ml_models_config.model_str} for pollutant {pollutant} and {type_of_params.upper()} params: {ml_params}') if train_model else logging.info('Loading latest pretrained model to make predictions...')
-    
-      # Training model + validation
-      trained_model, predictions = train_predict_ml_model(train_model_flag=True, store_model=store_model, model=model_to_train, X_train_data=X_train, Y_train_data=Y_train, X_test_data=validation_X)
-      results, rmse, mape, importance_scores = evaluate_model(trained_model, predictions, validation_Y, bins=100)
+      model_to_train_details = {'model_name': f"{pollutant}_{ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}",
+                                'model_to_train' : model_to_train}
       
-      # TODO: If everything is ok, add last step where joining trainning + validation datasets and retrain with the whole data.
+      if store_model:
+      # Training final model: training + validation sets                                                                                                                      ????? shall we also concatenate preds dataset into the final model training????
+        train_val_X, train_val_Y = pd.concat([X_train, validation_X]), pd.concat([Y_train, validation_Y])
+        logging.info(f'Joining training and validation datasets... We will train the final model with: \n{train_val_X.count()} \n')
+
+        with mlflow.start_run():
+          mlflow.autolog()
+          trained_model = train_load_ml_model(train_model_flag=True, model=model_to_train_details, X_train_data=train_val_X, Y_train_data=train_val_Y)                              
+          run_id = mlflow.active_run().info.run_id
+          print('Registering model...')
+          # The default path where the MLflow autologging function stores the model
+          artifact_path = "model"
+          model_uri = "runs:/{run_id}/{artifact_path}".format(run_id=run_id, artifact_path=artifact_path)
+          model_details = mlflow.register_model(model_uri=model_uri, name=model_to_train_details['model_name'])
+          mlflow.end_run()
+
+      else:
+        logging.info(f'Performing predictions with features: {validation_X.count()}')
+        trained_model = train_load_ml_model(train_model_flag=True, model=model_to_train_details, X_train_data=X_train, Y_train_data=Y_train)                              
+        predictions = trained_model.predict(validation_X)
+
+        results, rmse, mape, importance_scores = evaluate_model(trained_model, predictions, validation_Y, bins=100)
 
     else:
       ml_data_handler = MLDataHandler(pollutant)
-      # Prediction inputs data
-      pollutant_prediction_data, output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
       
+      # Prediction inputs data                                                                                                                                                    ????? shall we also concatenate preds dataset into the final model training????
+      pollutant_prediction_data, output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
+      logging.info(f'Performing predictions with features: {pollutant_prediction_data.count()}')
+
       # Predicting data using a stored pretrained model
       model_name = f"{pollutant}_{ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"
+      logging.info('Performing predictions with loaded model: ', model_name)
       pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
-      _, predictions = train_predict_ml_model(train_model_flag=False, store_model=store_model, model=model_name, X_train_data=None, Y_train_data=None, X_test_data=pollutant_prediction_data_pd)
+      trained_model = train_load_ml_model(train_model_flag=False, model=model_name, X_train_data=None, Y_train_data=None)
+      predictions = trained_model.predict(pollutant_prediction_data_pd)
+
       predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
       ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
+      
+      # Dealing with memory issues
       predictions_df = None
+      pollutant_prediction_data_pd = None
+      predictions = None
       
       if store_predictions:
-        logging.info('Writing {}... '.format(output_path))
-        ml_data_handler.parquet_storer(ml_outputs, output_path)
+        logging.info('Writing parquet file {}... '.format(output_path))
+        ml_data_handler.data_handler.parquet_storer(ml_outputs, output_path)
         
-#       ml_outputs = None
+        
+        df_spark = spark.createDataFrame(ml_outputs)
+        # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
+        ml_outputs_df_xy = df_spark \
+                                      .withColumnRenamed('x', 'x_old') \
+                                      .withColumnRenamed('y', 'y_old') \
+                                      .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+                                      .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+        ml_outputs = None
+        df_spark = None
+
+        ml_outputs_df_xy = ml_outputs_df_xy.cache()
+        
+        # # #Write to geotiff
+        raster_file = '/dbfs' +  ml_data_handler.data_handler.file_system_path + '/StaticData/testgeotif444444.tiff'
+        logging.info('Writing geotiff file {}... '.format(raster_file))
+        write_dataset_to_raster(raster_file, ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
+
+        ml_outputs_df_xy.unpersist()
       
       
       
@@ -329,56 +538,11 @@ logging.info(f'Finished!')
 
 # COMMAND ----------
 
-display(ml_outputs)
+mlflow.end_run()
 
 # COMMAND ----------
 
-from pyspark.sql import SparkSession
-from pyspark.sql.types import LongType
-import pyspark.sql.functions as F
-
-
-# Import and register 'SQL AQ CalcGrid' functions.
-exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 'calcgrid.py', 'exec'))
-gridid2laea_x_udf = spark.udf.register('gridid2laea_x', CalcGridFunctions.gridid2laea_x, LongType())
-gridid2laea_y_udf = spark.udf.register('gridid2laea_y', CalcGridFunctions.gridid2laea_y, LongType())
-
-# Import EEA AQ Azure platform tools on Databricks.
-exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/eeadatabricksutils.py').read(), 'eeadatabricksutils.py', 'exec'))
-exec(compile(eea_databricks_framework_initialize(), '', 'exec'))
-
-# COMMAND ----------
-
-# spark_session.createDataFrame(ml_outputs)
-
-
-df_spark = spark.createDataFrame(ml_outputs)
-
-
-# COMMAND ----------
-
-# Adding XY location using 'GridNum1km' attribute (For didactical purpose).
-ml_outputs_df_xy = df_spark \
-                              .withColumnRenamed('x', 'x_old') \
-                              .withColumnRenamed('y', 'y_old') \
-                              .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
-                              .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
-  
-
-# COMMAND ----------
-
-display(ml_outputs_df_xy)
-
-# COMMAND ----------
-
-import pandas as pd
-import numpy as np
-import tifffile
-
-
-# COMMAND ----------
-
-
+validation_X
 
 # COMMAND ----------
 
@@ -388,10 +552,6 @@ import tifffile
 
 my_map = FoliumUtils.create_folium_map_from_table(map_content_args={'table': ml_outputs_df_xy, 'attributes': [pollutant]})
 display(my_map)
-
-# COMMAND ----------
-
-
 
 # COMMAND ----------
 
