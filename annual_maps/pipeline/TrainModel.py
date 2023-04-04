@@ -23,7 +23,6 @@ DEFAULT_FEATURES_LIST = ['*', 'selected']
 DEFAULT_PARAMS_LIST = ['optimized', 'test']
 DEFAULT_STORE_MODEL_LIST = ['YES', 'NO']
 DEFAULT_TRAIN_MODEL_LIST = ['Train', 'Pretrained']
-# DEFAULT_STORE_PREDICTIONS_LIST = ['YES', 'NO']
 
 # Set widgets for notebook
 dbutils.widgets.text(name='TrainStartDate', defaultValue=str(DEFAULT_TRAIN_START), label='Train Start Year')                  
@@ -38,8 +37,7 @@ dbutils.widgets.multiselect('Trainset', "eRep", DEFAULT_TRAINSET_LIST, label='Tr
 dbutils.widgets.dropdown('Features', 'selected', DEFAULT_FEATURES_LIST, label='Features')  
 dbutils.widgets.dropdown('TypeOfParams', 'optimized', DEFAULT_PARAMS_LIST, label='Type of params')  
 dbutils.widgets.dropdown('StoreModel', 'NO', DEFAULT_STORE_MODEL_LIST, label='Store Trained Model')  
-dbutils.widgets.dropdown('TrainPretrained', 'Train', DEFAULT_TRAIN_MODEL_LIST, label='Train/Pretrained Model')  
-# dbutils.widgets.dropdown('StorePredictions', 'NO', DEFAULT_STORE_PREDICTIONS_LIST, label='Store Predictions')  
+dbutils.widgets.dropdown('TrainPretrained', 'Train', DEFAULT_TRAIN_MODEL_LIST, label='Train new / Use Pretrained Model')               # We can list available pretrained models. Select any/"Train new model"
 
 
 # https://xgboost.readthedocs.io/en/stable/tutorials/spark_estimator.html
@@ -86,28 +84,28 @@ dbutils.widgets.dropdown('TrainPretrained', 'Train', DEFAULT_TRAIN_MODEL_LIST, l
 
 # COMMAND ----------
 
-from pyspark.sql import SparkSession
-from pyspark.sql.types import LongType
-import pyspark.sql.functions as F
+# # from pyspark.sql import SparkSession
+# from pyspark.sql.types import LongType
+# import pyspark.sql.functions as F
 
 
-# Import and register 'SQL AQ CalcGrid' functions.
-exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 'calcgrid.py', 'exec'))
-gridid2laea_x_udf = spark.udf.register('gridid2laea_x', CalcGridFunctions.gridid2laea_x, LongType())
-gridid2laea_y_udf = spark.udf.register('gridid2laea_y', CalcGridFunctions.gridid2laea_y, LongType())
+# # Import and register 'SQL AQ CalcGrid' functions.
+# exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 'calcgrid.py', 'exec'))
+# gridid2laea_x_udf = spark.udf.register('gridid2laea_x', CalcGridFunctions.gridid2laea_x, LongType())
+# gridid2laea_y_udf = spark.udf.register('gridid2laea_y', CalcGridFunctions.gridid2laea_y, LongType())
 
-# Import EEA AQ Azure platform tools on Databricks.
-exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/eeadatabricksutils.py').read(), 'eeadatabricksutils.py', 'exec'))
-exec(compile(eea_databricks_framework_initialize(), '', 'exec'))
+# # Import EEA AQ Azure platform tools on Databricks.
+# exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/eeadatabricksutils.py').read(), 'eeadatabricksutils.py', 'exec'))
+# exec(compile(eea_databricks_framework_initialize(), '', 'exec'))
 
-from osgeo import gdal
-from osgeo import osr
+# # from osgeo import gdal
+# # from osgeo import osr
 
-gdal.UseExceptions()
-gdal.SetConfigOption('GDAL_DISABLE_READDIR_ON_OPEN', 'TRUE')
-gdal.SetConfigOption('CPL_CURL_VERBOSE', 'NO')
-gdal.SetConfigOption('CPL_DEBUG', 'NO')
-gdal.SetConfigOption('CPL_VSIL_CURL_ALLOWED_EXTENSIONS', '.tif')
+# # gdal.UseExceptions()
+# # gdal.SetConfigOption('GDAL_DISABLE_READDIR_ON_OPEN', 'TRUE')
+# # gdal.SetConfigOption('CPL_CURL_VERBOSE', 'NO')
+# # gdal.SetConfigOption('CPL_DEBUG', 'NO')
+# # gdal.SetConfigOption('CPL_VSIL_CURL_ALLOWED_EXTENSIONS', '.tif')
 
 
 # COMMAND ----------
@@ -117,15 +115,14 @@ import mlflow
 import logging
 import numpy as np
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-import plotly.express as px
+# import seaborn as sns
+# import matplotlib.pyplot as plt
+# import plotly.express as px
 
-from xgboost import XGBRegressor, plot_importance
-from sklearn import model_selection
-from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+# from xgboost import XGBRegressor, plot_importance
+# from sklearn import model_selection
+# from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 
-from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # from importlib import reload
 # reload(logging)
@@ -135,7 +132,6 @@ spark.conf.set("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation"
 
 # Import EEA Databricks utils.
 exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/fsutils.py').read(), 'fsutils.py', 'exec'))
-exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 'calcgrid.py', 'exec'))
 
 
 # Preparing logs configuration
@@ -458,6 +454,7 @@ for pollutant in pollutants:
         logging.info(f'Training model {ml_worker.ml_models_config.model_str} with {type_of_params.upper()} params {ml_worker.ml_params}')
         trained_model = ml_worker.train_load_ml_model(model_name=model_to_train_details['model_to_train'], X_train_data=X_train, Y_train_data=Y_train)  
       else:
+        # In case we are willing to re-evaluate an existing pretrained model
         logging.info(f'Loading pretrained model {model_to_train_details["model_name"]}')
         trained_model = ml_worker.train_load_ml_model(model_name=model_to_train_details['model_name'], X_train_data=X_train, Y_train_data=Y_train)
         

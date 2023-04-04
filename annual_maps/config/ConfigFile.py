@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/fsutils.py').read(), 'fsutils.py', 'exec'))
 
+from xgboost import XGBRegressor
+
 
 # COMMAND ----------
 
@@ -241,7 +243,7 @@ class MLModelsConfig:
   
   """
   
-  def __init__(self, pollutant:str, type_of_params:str = 'optimized'):
+  def __init__(self, pollutant:str, type_of_params:str):
     self.model_str = 'XGBRegressor()'
     
     

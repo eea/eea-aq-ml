@@ -4,10 +4,15 @@ import logging
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import datetime
+import plotly.express as px
+from sklearn import model_selection
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+
+import mlflow
 
 from patsy import dmatrix
 from pyspark.sql.functions import col
+from xgboost import XGBRegressor, plot_importance
 
 # from importlib import reload
 # reload(logging)
@@ -271,9 +276,9 @@ class PrepareTrainValPredDfs:
 
 class MLWorker(MLModelsConfig):
   
-  def __init__(self, pollutant, type_of_params):
+  def __init__(self, pollutant, type_of_params:str=None):
     self.ml_models_config = MLModelsConfig(pollutant, type_of_params)
-    self.model_to_train, self.ml_params = self.ml_models_config.prepare_model()
+    if type_of_params!= None: self.model_to_train, self.ml_params = self.ml_models_config.prepare_model()
 
   @staticmethod
   def split_data(df: pd.DataFrame, train_size:float=0.7, label:list=None):
@@ -379,8 +384,9 @@ class MLWorker(MLModelsConfig):
       plt.title(f'Feature importance (fscore) for target {target} & pollutant {pollutant}')
       plt.show();
     except:
-      print('Feature importance could not be calculated!')
-
+      print('Feature importance could not be calculated! This may occur when you load a pretrained model...')
+      return results, rmse, mape
+    
     return results, rmse, mape, importance_scores
   
   
