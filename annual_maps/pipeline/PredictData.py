@@ -1,277 +1,431 @@
 # Databricks notebook source
-# Import EEA AQ Azure platform tools on Databricks.
-exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/eeadatabricksutils.py').read(), 'eeadatabricksutils.py', 'exec'))
-exec(compile(eea_databricks_framework_initialize(), '', 'exec'))
+# MAGIC %md
+# MAGIC # 0. Adding Notebook Input widgets
 
-# Initialize a Context Dictionary with useful data.
-context_args = {
-  'SAS_KEY': 'sv=2019-12-12&ss=b&srt=co&sp=rwdlacx&se=2025-11-12T12:26:12Z&st=2020-11-12T12:26:12Z&spr=https&sig=TmnGlsXBelFacWPNZiOD2q%2BNHl7vyTl5OhKwQ6Eh1n8%3D'
-}
+# COMMAND ----------
+
+# dbutils.widgets.removeAll()
+
+
+# COMMAND ----------
+
+
+# Set default parameters for input widgets
+# DEFAULT_TRAIN_START = '2016'
+# DEFAULT_TRAIN_END = '2019'
+DEFAULT_PREDVAL_START = '2020'
+DEFAULT_PREDVAL_END = '2020'
+DEFAULT_VERSION = 'v0'
+DEFAULT_DATE_OF_INPUT = '20230201'
+
+DEFAULT_POLLUTANTS_LIST = ['PM10', 'PM25', 'O3', 'O3_SOMO10', 'O3_SOMO35', 'NO2']
+DEFAULT_TRAINSET_LIST = [ 'eRep', 'e1b']
+DEFAULT_FEATURES_LIST = ['*', 'selected']
+DEFAULT_PARAMS_LIST = ['optimized', 'test']
+DEFAULT_STORE_MODEL_LIST = ['YES', 'NO']
+DEFAULT_TRAIN_MODEL_LIST = ['YES', 'NO']
+DEFAULT_STORE_PREDICTIONS_LIST = ['YES', 'NO']
+
+# Set widgets for notebook
+# dbutils.widgets.text(name='TrainStartDate', defaultValue=str(DEFAULT_TRAIN_START), label='Train Start Year')                  
+# dbutils.widgets.text(name='TrainEndDate', defaultValue=str(DEFAULT_TRAIN_END), label='Train End Year')
+dbutils.widgets.text(name='PredValStartDate', defaultValue=str(DEFAULT_PREDVAL_START), label='Pred-Val Start Year')
+dbutils.widgets.text(name='PredValEndDate', defaultValue=str(DEFAULT_PREDVAL_END), label='Pred-Val End Year')
+dbutils.widgets.text(name='Version', defaultValue=str(DEFAULT_VERSION), label='Version')
+dbutils.widgets.text(name='DateOfInput', defaultValue=str(DEFAULT_DATE_OF_INPUT), label='Date of Input')                            # ? Check the db every time to get the dateofinput?  # Idea generate a droprdown widget + listdir from db
+
+dbutils.widgets.multiselect('Pollutants', 'PM10', DEFAULT_POLLUTANTS_LIST, label='Pollutants')
+dbutils.widgets.multiselect('Trainset', "eRep", DEFAULT_TRAINSET_LIST, label='Trainset')                         
+dbutils.widgets.dropdown('Features', 'selected', DEFAULT_FEATURES_LIST, label='Features')  
+dbutils.widgets.dropdown('TypeOfParams', 'optimized', DEFAULT_PARAMS_LIST, label='Type of params')  
+# dbutils.widgets.dropdown('StoreModel', 'NO', DEFAULT_STORE_MODEL_LIST, label='Store Trained Model')  
+# dbutils.widgets.dropdown('TrainModel', 'NO', DEFAULT_TRAIN_MODEL_LIST, label='Train Model')  
+dbutils.widgets.dropdown('StorePredictions', 'NO', DEFAULT_STORE_PREDICTIONS_LIST, label='Store Predictions')  
+
+
+# https://xgboost.readthedocs.io/en/stable/tutorials/spark_estimator.html
+# https://docs.databricks.com/_extras/notebooks/source/xgboost-pyspark.html
+
+
+# COMMAND ----------
+
+for pollutant in pollutants:   
+  
+# In case we have different target variables i.e.: eRep and e1b.
+  for target in trainset:
+    logging.info(f'Processing pollutant: {pollutant} target {target}.')
+    label = [target + '_' + pollutant.upper()][0]
+#     ml_models_config = MLModelsConfig(pollutant, type_of_params)        
+    ml_worker = MLWorker(pollutant, type_of_params)
+    ml_data_handler = MLDataHandler(pollutant)
+
+    # Prediction inputs data                                                                   ????? shall we also concatenate preds dataset into the final model training????
+    pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
+
+    # Predicting data using a stored pretrained model
+    model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"}
+    logging.info(f'Performing predictions with the latest version from the pretrained loaded model: {model_to_train_details["model_name"]} ')
+    pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
+    logging.info(f'Performing predictions with features:\n {pollutant_prediction_data_pd.count()}')
+
+    trained_model = train_load_ml_model(train_model_flag=False, model=model_to_train_details['model_name'], X_train_data=None, Y_train_data=None)
+    predictions = trained_model.predict(pollutant_prediction_data_pd)
+
+    predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
+    ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
+
+    # Dealing with memory issues
+    predictions_df = None
+    pollutant_prediction_data_pd = None
+    predictions = None
+
+    if store_predictions:
+      logging.info('Writing parquet file {} '.format(output_parquet_path))
+      ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path)
+      df_spark = spark.createDataFrame(ml_outputs)
+      
+      # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
+      ml_outputs_df_xy = df_spark \
+                                    .withColumnRenamed('x', 'x_old') \
+                                    .withColumnRenamed('y', 'y_old') \
+                                    .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+                                    .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+      ml_outputs = None
+      df_spark = None
+
+      ml_outputs_df_xy = ml_outputs_df_xy.cache()
+
+      # Write to geotiff       
+      logging.info('Writing geotiff file {} '.format(raster_output_path))
+      write_dataset_to_raster(output_raster_path='/dbfs'+ raster_output_path, dataset=ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
+
+      ml_outputs_df_xy.unpersist()
+      
+logging.info(f'Finished!')
+
+
+# Note if we add some more features/rows to the df, we might need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
+
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## ML predictions
-# MAGIC >  **NOTE:** The predictions are made based on fit on training data
+# MAGIC # 1. Import required packages & variables
+
+# COMMAND ----------
+
+# MAGIC %run "../utils/Lib1"
+
+# COMMAND ----------
+
+# MAGIC %run "../config/ConfigFile"
+
+# COMMAND ----------
+
+import logging
+
+# Import EEA Databricks utils.
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/fsutils.py').read(), 'fsutils.py', 'exec'))
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 'calcgrid.py', 'exec'))
+
+# Preparing logs configuration
+logging.basicConfig(
+    format = '%(asctime)s %(levelname)-8s %(message)s', 
+    level  = logging.INFO,
+)
+logging.getLogger("py4j").setLevel(logging.ERROR)
+
+
+
+# Adding input variables from widgets
+# train_start_year:str = dbutils.widgets.get('TrainStartDate')
+# train_end_year:str = dbutils.widgets.get('TrainEndDate')
+predval_start_year:str = dbutils.widgets.get('PredValStartDate')
+predval_end_year:str = dbutils.widgets.get('PredValEndDate')
+pollutants:list = dbutils.widgets.get('Pollutants').split(',')
+trainset:list = dbutils.widgets.get('Trainset').split(',')
+date_of_input:str = dbutils.widgets.get('DateOfInput')
+version:str = dbutils.widgets.get('Version')
+features:list = dbutils.widgets.get('Features') if isinstance(dbutils.widgets.get('Features'), list) else [dbutils.widgets.get('Features')]
+type_of_params:str = dbutils.widgets.get('TypeOfParams')
+# train_model:bool = True if dbutils.widgets.get('TrainModel') == 'YES' else False
+# store_model:bool = True if dbutils.widgets.get('StoreModel') == 'YES' else False
+store_predictions:bool = True if dbutils.widgets.get('StorePredictions') == 'YES' else False
+
+
+logging.info(f'Your chosen parameters: predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", features: {features}, type_of_params: "{type_of_params}", store_predictions:"{store_predictions}"')
+
+if len(trainset)>1: logging.warning(f'You have chosen more than 1 values for Trainset: {trainset}')
+if predval_end_year < predval_start_year: raise Exception('End dates cannot be earlier than starting dates. Double check!') 
+if featurs[0]!='selected': logging.warning(f'You have chosen to use ALL FEATURES for predicting data. Pretrained models only work with features used in its training...')
+if type_of_params!='optimized': logging.warning(f'You have chosen to use TEST params for predicting data. Pretrained models only work with parameters used in its training...')
+
+# if (train_model == False) & (store_model == True): raise Exception('Set Train Model = "YES" if you are willing to store the model, otherwise set Store Trained Model = "NO". You will need to train the model before storing it!') 
+# if (train_model == True) & (store_predictions == True): raise Exception('Set Train Model = "NO" if you are willing to store predictions, otherwise set Store Predictions = "NO". You will need to execute the predict model before storing predictions!') 
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC # 2. Functions
+# MAGIC 
 # MAGIC <br/>
 
 # COMMAND ----------
 
-# DATA LOADING MODIFIED (NO CUT OFF on REF) TO ALLOW MORE TRAINING DATA FOR SOMO10
-# Data loading, split into train, cv and joining reference data from ETC maps
-# Function to: 
-# - read the data for training and validation
-# - prepare data sets for training, cv and validation
-# - add reference data from ETC interpolated maps to each of the data set for comparison purposes
-
-def loadAQMLDataValTrain(path,train_start_year,train_end_year,predval_start_year,predval_end_year,trainset,pollutant,dateOfInput):
-
-#   import pyspark.sql.functions as F
-#   import pandas as pd
-#   import numpy as np 
-#   from sklearn import model_selection
   
-  example = 'example'
-  
-  if pollutant == 'NO2': 
-    example = 'example-03'
-    #refcol = 'no2_avg'
-    cols = no2cols # used only for feature post-selection based on correlation and VIF
-  elif  pollutant == 'PM10': 
-    example = 'example-01'
-    #refcol = 'pm10_avg'
-    cols = pm10cols # used only for feature post-selection based on correlation and VIF
-  elif  pollutant == 'PM25': 
-    example = 'example-02'  
-    #refcol = 'pm25_avg'
-    cols = pm25cols # used only for feature post-selection based on correlation and VIF
-  elif  pollutant == 'O3_SOMO35': 
-    example = 'example-04'  
-    #refcol = 'o3_somo35'
-    cols = o3somo35cols # used only for feature post-selection based on correlation and VIF
-  elif  pollutant == 'O3_SOMO10': 
-    example = 'example-05'  
-    #refcol = 'o3_somo10'
-    cols = o3somo10cols # used only for feature post-selection based on correlation and VIF
-  # Compiling path to files
-
-  trainfile = path + example + '_' + pollutant + '_' + predval_start_year + '-' + predval_end_year + '/' + dateOfInput + '/' + 'training_input_' + trainset + '_' + pollutant + '_' + train_start_year + '-' + train_end_year + '.parquet'
-  valfile = path + example + '_' + pollutant + '_' + predval_start_year + '-' + predval_end_year + '/' + dateOfInput + '/' + 'validation_input_' + pollutant + '_' + predval_start_year + '-' + predval_end_year + '.parquet'
-
-  # Reading ML input files into spark data frames
-
-  dftraining = spark.read.parquet(trainfile).select(cols) # used only for feature post-selection based on correlation and VIF
-  dfvalidation = spark.read.parquet(valfile).select(cols) # used only for feature post-selection based on correlation and VIF
-
-  # Reading reference data (ETC interpolated maps) into spark data frames
-  
-#   dfref = spark.read.parquet(aq_predictions_path + '/ETC_maps/aq_grids_year_all_with2020.parquet')
-#   dfref_train = dfref.filter((dfref.Year >= train_start_year) & (dfref.Year <= train_end_year)).select(dfref.GridNum1km, dfref.Year, dfref[refcol])
-#   dfref_val = dfref.filter((dfref.Year >= predval_start_year) & (dfref.Year <= predval_end_year)).select(dfref.GridNum1km, dfref.Year, dfref[refcol])
-
-  # Joining reference data with the ML input data sets (training and validation)
-
-#   dfref_train = dfref_train.withColumnRenamed("GridNum1km","GridNum1km_2").withColumnRenamed("Year","Year_2")
-#   dfref_val = dfref_val.withColumnRenamed("GridNum1km","GridNum1km_2").withColumnRenamed("Year","Year_2")
-  
-# This is the MODIFICATION to allow more data for training of SOMO10 (where ref is missing for several years)  
-#   dfref_train = dfref_train.filter(dfref_train[refcol] > 0)
-#   dfref_val = dfref_val.filter(dfref_val[refcol] > 0)
-
-  # here also fraction sampling is used
-  dftrain = dftraining#.sample(frac)#.join(dfref_train,(dftraining.GridNum1km == dfref_train.GridNum1km_2) & (dftraining.Year == dfref_train.Year_2),how="inner")
-  dfval = dfvalidation#.sample(frac)#.join(dfref_val,(dfvalidation.GridNum1km == dfref_val.GridNum1km_2) & (dfvalidation.Year == dfref_val.Year_2),how="inner")
-
-  # Preparing data set as pandas data frame
-  # The target data sets will include the reference data so that following splits (e.g. training and cv) remain consistent
-
-  #target feature
-  target = trainset + '_' + pollutant
-  #refcol = refcol
-
-  #training & cv data
-  dftrainx = dftrain.drop(target,'GridNum1km','Year','GridNum1km_2','Year_2','AreaHa')#refcol,
-  dftrainy = dftrain.select(target) # keeping both target and reference attribute #refcol
-  X = dftrainx.toPandas()
-  y = dftrainy.toPandas()
-
-  #final validation data
-  dfvalx = dfval.drop(target,'GridNum1km','Year','GridNum1km_2','Year_2','AreaHa')# refcol,
-  dfvaly = dfval.select(target) # keeping both target and reference attribute # refcol
-  X_val = dfvalx.toPandas()
-  y_val = dfvaly.toPandas()
-
-  # Splitting training data sets into training and cv parts 
-
-  np.random.seed(12)
-  X_train, X_cv, y_train, y_cv = model_selection.train_test_split(X, y, train_size=0.9)
-
-  # Splitting the target-reference data sets for training, cv and validation into separate data sets
-
-#   y_train = y_train[[target]] # target for training error checks
-#   #y_train_ref = y_withref_train[[refcol]] # reference for training error checks
-
-#   y_cv = y_cv[[target]]  # target for cv error checks
-#   #y_cv_ref = y_withref_cv[[refcol]]  # reference for cv error checks
-
-#   y_val = y_val[[target]]  # target for validation error checks
-#   y_val_ref = y_withref_val[[refcol]]  # reference for validation error checks
-  
-#   df = dftrain.drop(refcol,'GridNum1km','Year','GridNum1km_2','Year_2').toPandas()
-#   corr = df.corrwith(df[target])
-#   dfcorr = corr.to_frame()
-#   dfcorr = dfcorr.drop(target)
+def write_dataset_to_raster(output_raster_path, dataset, attribute, x_attrib='x', y_attrib='y',
+                            driver_name='Gtiff', srid=3035, bbox=None, pixel_size_x=1000.0, pixel_size_y=1000.0, no_data=-9999,
+                            options=['COMPRESS=DEFLATE', 'TILED=YES', 'BLOCKXSIZE=256', 'BLOCKYSIZE=256']):
+    """
+    Write to raster file the specified Dataset object and parameters.
+    """
+    is_a_dataframe = hasattr(dataset, 'select')
     
-  return X_train, X_cv, X_val, y_train, y_cv, y_val
-
-
-# COMMAND ----------
-
-# AQ prediction ML data loading, solution with function
-  
-# # Define main path to files
-# path = aq_predictions_path + '/ML_Input/'
-# #print(path)
-
-# # Set parameters to read the input such as years, pollutant, input data set, etc.
-# train_start_year = '2015'
-# train_end_year = '2019'
-# predval_start_year = '2020'
-# predval_end_year = '2020'
-# trainset = 'eRep' # 'e1b' -- modelled data, 'eRep' -- measurement data
-# pollutant = 'NO2' #,'PM10','PM25','O3_SOMO35','NO2'
-# dateOfInput = '20220720'
-
-# big data set requires 11.0 ML (includes Apache Spark 3.3.0, GPU, Scala 2.12) to read into pandas; to be used only after training
-def loadAQMLPredData(path,predval_start_year,predval_end_year,pollutant,dateOfInput):
-
-#   import pyspark.sql.functions as F
-#   import pandas as pd
-#   import numpy as np 
-#   from sklearn import model_selection
-  
-  example = 'example'
-  
-  if pollutant == 'NO2': 
-    example = 'example-03'
-    refcol = 'no2_avg'
-    cols = no2cols # used only for feature post-selection based on correlation and VIF
-  elif  pollutant == 'PM10': 
-    example = 'example-01'
-    refcol = 'pm10_avg'
-    cols = pm10cols # used only for feature post-selection based on correlation and VIF
-  elif  pollutant == 'PM25': 
-    example = 'example-02'  
-    refcol = 'pm25_avg'
-    cols = pm25cols # used only for feature post-selection based on correlation and VIF
-  elif  pollutant == 'O3_SOMO35': 
-    example = 'example-04'  
-    refcol = 'o3_somo35'
-    cols = o3somo35cols # used only for feature post-selection based on correlation and VIF
-  elif  pollutant == 'O3_SOMO10': 
-    example = 'example-05'  
-    refcol = 'o3_somo10'
-    cols = o3somo10cols # used only for feature post-selection based on correlation and VIF
-  # Compiling path to files
-  
-  predfile = path + example + '_' + pollutant + '_' + predval_start_year + '-' + predval_end_year + '/' + dateOfInput + '/' + 'prediction_input_' + pollutant + '_' + predval_start_year + '-' + predval_end_year + '.parquet'
-
-  # Reading ML input files into spark data frames
-  
-  dfpred = spark.read.parquet(predfile).select(cols[1:]) # used only for feature post-selection based on correlation and VIF
-  # Preparing data set as pandas data frame
-
-  X_pred = dfpred.toPandas() # big data set requires 11.0 ML (includes Apache Spark 3.3.0, GPU, Scala 2.12) to read into pandas; to be used only after training
-  
-  return X_pred # big data set requires 11.0 ML (includes Apache Spark 3.3.0, GPU, Scala 2.12) to read into pandas; to be used only after training
-
-#X_pred = loadAQMLPredData(path,predval_start_year,predval_end_year,pollutant,dateOfInput)
-
-# COMMAND ----------
-
-# ML predictions
-
-# Define main path to files
-path = aq_predictions_path + '/ML_Input/'
-#print(path)
-
-# Set parameters to read the input such as years, pollutant, input data set, etc.
-train_start_year = '2014'
-train_end_year = '2020'
-predval_start_year = '2014'
-predval_end_year = '2021'
-trainset = 'eRep' # 'e1b' -- modelled data, 'eRep' -- measurement data
-pollutants = ['PM10','PM25','O3_SOMO35','O3_SOMO10','NO2']
-dateOfInput = '20220826'
-frac = 1.0 # this is fraction of training data sampling for evaluation purpose, default is 1.0
-
-
-
-
-
-
-
-
-
-
-
-
-for pollutant in pollutants:
-  
-  print('Pollutant: ' + pollutant)
-
-  # Load data, fit model and prep data for error calculations
-
-  X_train, X_cv, X_val, y_train, y_cv, y_val = loadAQMLDataValTrain(path,train_start_year,train_end_year,predval_start_year,predval_end_year,trainset,pollutant,dateOfInput)
-  lr,md,gm,al,la,sub = bestModelParameters(pollutant)
-  model = XGBRegressor(learning_rate = lr, max_depth = md, gamma = gm, reg_alpha = al, reg_lambda = la, subsample = sub)
-  model.fit(X_train,y_train)
-
-  X_pred = loadAQMLPredData(path,predval_start_year,predval_end_year,pollutant,dateOfInput)
-  predictions = model.predict(X_pred.iloc[:, 3:])
-
-  X_maps = X_pred.iloc[:, :2]
-  preds = pd.DataFrame({pollutant: predictions})
-  ML_maps = pd.concat([X_maps,preds], axis=1)
-  ML_maps_spark = spark.createDataFrame(ML_maps) 
-
-  file_name = '/dbfs' + aq_predictions_path+"/ML_Output/" + pollutant + "_" + predval_start_year + "_" + predval_end_year + "_" + dateOfInput+"_maps.parquet"
-  ML_maps_spark.toPandas().to_parquet(file_name, compression='snappy')
+    import tempfile
+    import uuid
+    import os
+    import numpy as np
+    
+    temp_name = str(uuid.uuid1()).replace('-', '')
+    columns = dataset.columns
+    for c in [x_attrib, y_attrib, attribute]:
+        if c not in columns: raise Exception('The Dataset does not contain the "{}" attribute.'.format(c))
+              
+    # DataType codes (For Numpy & Spark) of available data-types of a GDAL Dataset.
+    GDT_DataTypeCodes = dict([
+        ('unknown', gdal.GDT_Unknown),
+        ('byte', gdal.GDT_Byte),
+        ('uint8', gdal.GDT_Byte),
+        ('uint16', gdal.GDT_UInt16), ('int16', gdal.GDT_Int16),
+        ('uint32', gdal.GDT_UInt32), ('int32', gdal.GDT_Int32), ('int64', gdal.GDT_Float64),
+        ('float32', gdal.GDT_Float32), ('float64', gdal.GDT_Float64),
+        ('cint16', gdal.GDT_CInt16), ('cint32', gdal.GDT_CInt32), ('cfloat32', gdal.GDT_CFloat32),
+        ('cfloat64', gdal.GDT_CFloat64)
+    ])
+    SPK_DataTypeCodes = dict([
+        ('unknown', gdal.GDT_Unknown),
+        ('byte', gdal.GDT_Byte),
+        ('sort', gdal.GDT_Int16),
+        ('int', gdal.GDT_Int32),
+        ('bigint', gdal.GDT_Float64),
+        ('long', gdal.GDT_Float64),
+        ('float', gdal.GDT_Float32),
+        ('double', gdal.GDT_Float64),
+    ])
+    if is_a_dataframe:
+        data_type = str(dataset.select(attribute).dtypes[0][1])
+        data_format = SPK_DataTypeCodes[data_type]
+    else:
+        data_type = str(dataset[attribute].dtypes)
+        data_format = GDT_DataTypeCodes[data_type]
+            
+    # Calculate current CRS.
+    spatial_ref = osr.SpatialReference()
+    spatial_ref.ImportFromEPSG(srid)
+    if hasattr(spatial_ref, 'SetAxisMappingStrategy'): spatial_ref.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    
+    # Calculate current BBOX when not specified, taking care of input Dataset object type.
+    if bbox is None and is_a_dataframe:
+        dataset.createOrReplaceTempView(temp_name)
+        envelope_df = spark.sql('SELECT MIN({}) as x_min, MIN({}) as y_min, MAX({}) as x_max, MAX({}) as y_max FROM {}'.format(x_attrib, y_attrib, x_attrib, y_attrib, temp_name))
+        temp_df = envelope_df.collect()[0]
+        x_min, y_min, x_max, y_max = temp_df[0], temp_df[1], temp_df[2], temp_df[3]
+        spark.catalog.dropTempView(temp_name)
+        bbox = [x_min, y_min, x_max, y_max]
+    if bbox is None and not is_a_dataframe:
+        temp_df = dataset[[x_attrib, y_attrib]].min(axis=0)
+        x_min, y_min = temp_df['x'], temp_df['y']
+        temp_df = dataset[[x_attrib, y_attrib]].max(axis=0)
+        x_max, y_max = temp_df['x'], temp_df['y']
+        bbox = [x_min, y_min, x_max, y_max]
+        
+    n_cols = 1 + ((bbox[2] - bbox[0]) / pixel_size_x)
+    n_rows = 1 + ((bbox[3] - bbox[1]) / pixel_size_y)
+    n_cols = int(n_cols)
+    n_rows = int(n_rows)
+    
+    # Append INDEX for each cell, for matching the INDEX/VALUE pairs when filling the target np.array.
+    if is_a_dataframe:
+        import pyspark.sql.functions as F
+        from pyspark.sql.types import LongType
+        
+        dataset = dataset \
+            .withColumn('idx_', (((F.lit(bbox[3]) - F.col(y_attrib)) / F.lit(pixel_size_y)) * F.lit(n_cols)) + ((F.col(x_attrib) - F.lit(bbox[0])) / F.lit(pixel_size_x))) \
+            .withColumn('idx_', F.col('idx_').cast(LongType()))
+    else:
+        dataset['idx_'] = \
+            (((bbox[3] - dataset[y_attrib]) / pixel_size_y) * n_cols) + ((dataset[x_attrib] - bbox[0]) / pixel_size_x)
+        
+    # Write raster file using a temporary folder, we'll copy it to output path later.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file = os.path.join(temp_dir, temp_name) + os.path.splitext(output_raster_path)[1]
+        
+        driver = gdal.GetDriverByName(driver_name)
+        raster = driver.Create(temp_file, n_cols, n_rows, 1, data_format, options=options)
+        raster.SetGeoTransform([bbox[0] - 0.5*pixel_size_x, pixel_size_x, 0.0, bbox[3] + 0.5*pixel_size_y, 0.0, -pixel_size_y])
+        raster.SetProjection(spatial_ref.ExportToWkt())
+        raster_band = raster.GetRasterBand(1)
+        raster_band.SetNoDataValue(no_data)
+        
+        # Write values (Using the 'INDEX' attribute as row/col locator of Cells).
+        if is_a_dataframe:
+            temp_np = dataset.select(['idx_', attribute]).toPandas()
+            indx_np = temp_np['idx_']
+            data_np = temp_np[attribute]
+            
+            r_array = np.full((n_rows * n_cols), no_data, dtype=data_type)
+            np.put(r_array, indx_np, data_np)
+            raster_band.WriteArray(r_array.reshape(n_rows, n_cols))
+            del r_array
+        else:
+            indx_np = dataset['idx_']
+            data_np = dataset[attribute]
+            
+            r_array = np.full((n_rows * n_cols), no_data, dtype=data_type)
+            np.put(r_array, indx_np, data_np)
+            raster_band.WriteArray(r_array.reshape(n_rows, n_cols))
+            del r_array
+            
+        raster_band = None
+        raster.FlushCache()
+        raster = None
+        
+        # Copy the temporary raster file to output path.
+        if output_raster_path.startswith('/dbfs'):
+            final_file = output_raster_path[5:]
+            dbutils.fs.cp('file:' + temp_file, 'dbfs:' + ml_data_handler.data_handler.file_system_path + final_file)
+        else:
+            import shutil
+            shutil.copy2(temp_file, output_raster_path)
+            
+    return output_raster_path
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Inference
-# MAGIC [The MLflow Model Registry](https://docs.databricks.com/applications/mlflow/model-registry.html) is a collaborative hub where teams can share ML models, work together from experimentation to online testing and production, integrate with approval and governance workflows, and monitor ML deployments and their performance. The snippets below show how to add the model trained in this notebook to the model registry and to retrieve it later for inference.
 # MAGIC 
-# MAGIC > **NOTE:** The `model_uri` for the model already trained in this notebook can be found in the cell below
-# MAGIC 
-# MAGIC ### Register to Model Registry
-# MAGIC ```
-# MAGIC model_name = "Example"
-# MAGIC 
-# MAGIC model_uri = f"runs:/{ mlflow_run.info.run_id }/model"
-# MAGIC registered_model_version = mlflow.register_model(model_uri, model_name)
-# MAGIC ```
-# MAGIC 
-# MAGIC ### Load from Model Registry
-# MAGIC ```
-# MAGIC model_name = "Example"
-# MAGIC model_version = registered_model_version.version
-# MAGIC 
-# MAGIC model = mlflow.pyfunc.load_model(model_uri=f"models:/{model_name}/{model_version}")
-# MAGIC model.predict(input_X)
-# MAGIC ```
-# MAGIC 
-# MAGIC ### Load model without registering
-# MAGIC ```
-# MAGIC model_uri = f"runs:/{ mlflow_run.info.run_id }/model"
-# MAGIC 
-# MAGIC model = mlflow.pyfunc.load_model(model_uri)
-# MAGIC model.predict(input_X)
-# MAGIC ```
+# MAGIC # 3. Execute predict
 
 # COMMAND ----------
 
-# model_uri for the generated model
-print(f"runs:/{ mlflow_run.info.run_id }/model")
+for pollutant in pollutants:   
+  
+# In case we have different target variables i.e.: eRep and e1b.
+  for target in trainset:
+    logging.info(f'Processing pollutant: {pollutant} target {target}.')
+    label = [target + '_' + pollutant.upper()][0]
+#     ml_models_config = MLModelsConfig(pollutant, type_of_params)        
+    ml_worker = MLWorker(pollutant, type_of_params)
+    ml_data_handler = MLDataHandler(pollutant)
+
+    # Prediction inputs data                                                                   ????? shall we also concatenate preds dataset into the final model training????
+    pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
+
+    # Predicting data using a stored pretrained model
+    model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"}
+    logging.info(f'Performing predictions with the latest version from the pretrained loaded model: {model_to_train_details["model_name"]} ')
+    pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
+    logging.info(f'Performing predictions with features:\n {pollutant_prediction_data_pd.count()}')
+
+    trained_model = train_load_ml_model(train_model_flag=False, model=model_to_train_details['model_name'], X_train_data=None, Y_train_data=None)
+    predictions = trained_model.predict(pollutant_prediction_data_pd)
+
+    predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
+    ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
+
+    # Dealing with memory issues
+    predictions_df = None
+    pollutant_prediction_data_pd = None
+    predictions = None
+
+    if store_predictions:
+      logging.info('Writing parquet file {} '.format(output_parquet_path))
+      ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path)
+      df_spark = spark.createDataFrame(ml_outputs)
+      
+      # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
+      ml_outputs_df_xy = df_spark \
+                                    .withColumnRenamed('x', 'x_old') \
+                                    .withColumnRenamed('y', 'y_old') \
+                                    .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+                                    .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+      ml_outputs = None
+      df_spark = None
+
+      ml_outputs_df_xy = ml_outputs_df_xy.cache()
+
+      # Write to geotiff       
+      logging.info('Writing geotiff file {} '.format(raster_output_path))
+      write_dataset_to_raster(output_raster_path='/dbfs'+ raster_output_path, dataset=ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
+
+      ml_outputs_df_xy.unpersist()
+      
+logging.info(f'Finished!')
+
+
+# Note if we add some more features/rows to the df, we might need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+# for pollutant in pollutants:   
+  
+# # In case we have different target variables i.e.: eRep and e1b.
+#   for target in trainset:
+#     logging.info(f'Processing pollutant: {pollutant} target {target}.')
+#     label = [target + '_' + pollutant.upper()][0]
+# #     ml_models_config = MLModelsConfig(pollutant, type_of_params)        
+#     ml_worker = MLWorker(pollutant, type_of_params)
+#     ml_data_handler = MLDataHandler(pollutant)
+
+#     # Prediction inputs data                                                                   ????? shall we also concatenate preds dataset into the final model training????
+#     pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
+
+#     # Predicting data using a stored pretrained model
+#     model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"}
+#     logging.info(f'Performing predictions with the latest version from the pretrained loaded model: {model_to_train_details["model_name"]} ')
+#     pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
+#     logging.info(f'Performing predictions with features:\n {pollutant_prediction_data_pd.count()}')
+
+#     trained_model = train_load_ml_model(train_model_flag=False, model=model_to_train_details['model_name'], X_train_data=None, Y_train_data=None)
+#     predictions = trained_model.predict(pollutant_prediction_data_pd)
+
+#     predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
+#     ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
+
+#     # Dealing with memory issues
+#     predictions_df = None
+#     pollutant_prediction_data_pd = None
+#     predictions = None
+
+#     if store_predictions:
+#       logging.info('Writing parquet file {} '.format(output_parquet_path))
+#       ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path)
+#       df_spark = spark.createDataFrame(ml_outputs)
+      
+#       # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
+#       ml_outputs_df_xy = df_spark \
+#                                     .withColumnRenamed('x', 'x_old') \
+#                                     .withColumnRenamed('y', 'y_old') \
+#                                     .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+#                                     .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+#       ml_outputs = None
+#       df_spark = None
+
+#       ml_outputs_df_xy = ml_outputs_df_xy.cache()
+
+#       # Write to geotiff       
+#       logging.info('Writing geotiff file {} '.format(raster_output_path))
+#       write_dataset_to_raster(output_raster_path='/dbfs'+ raster_output_path, dataset=ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
+
+#       ml_outputs_df_xy.unpersist()
+      
+# logging.info(f'Finished!')
+
+
+# # Note if we add some more features/rows to the df, we might need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
+

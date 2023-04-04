@@ -4,6 +4,7 @@ import logging
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import datetime
 
 from patsy import dmatrix
 from pyspark.sql.functions import col
@@ -174,7 +175,7 @@ class MLDataHandler(DataHandler):
   def __init__(self, pollutant:str):
 
     self.data_handler = DataHandler(pollutant)
-    self.train_path_struct, self.validation_path_struct, self.prediction_path_struct, self.output_path_struct = self.data_handler.config.select_ml_paths()
+    self.train_path_struct, self.validation_path_struct, self.prediction_path_struct, self.parquet_output_path_struct, self.raster_outputs_path_struct = self.data_handler.config.select_ml_paths() 
 
   
   def build_path(self, predval_start_year:str, predval_end_year:str, date_of_input:str, version:str, target:str, train_start_year:str, train_end_year:str): 
@@ -184,17 +185,18 @@ class MLDataHandler(DataHandler):
       train_path:str = self.train_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, target, self.data_handler.pollutant, train_start_year, train_end_year)
       validation_path:str = self.validation_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
 
-#       train_path:str = self.train_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, target, self.data_handler.pollutant, train_start_year, train_end_year)
-#       validation_path:str = self.validation_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, self.data_handler.pollutant, predval_start_year, predval_end_year)
-
       return train_path, validation_path
     
     else:
       prediction_path:str = self.prediction_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
-#       prediction_path:str = self.prediction_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, self.data_handler.pollutant, predval_start_year, predval_end_year)
-      output_path:str = self.output_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input)
+      output_parquet_path:str = self.parquet_output_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input)
+  
+      code_pollutant = {'NO2':'8', 'PM10':'5', 'PM25':'6001', 'O3_SOMO35':'7', 'O3_SOMO10':'7'}
+      agg_pollutant = {'NO2':'P1Y', 'PM10':'P1Y', 'PM25':'P1Y', 'O3_SOMO35':'SOMO35', 'O3_SOMO10':'SOMO10'}
       
-      return prediction_path, output_path
+      raster_output_path:str = self.raster_outputs_path_struct.format(predval_end_year, code_pollutant[self.data_handler.pollutant], agg_pollutant[self.data_handler.pollutant], predval_end_year, code_pollutant[self.data_handler.pollutant], agg_pollutant[self.data_handler.pollutant])                 # predyear, code, agg, predyear, code, agg
+    
+      return prediction_path, output_parquet_path, raster_output_path
 
   
   def data_collector(self, predval_start_year:str, predval_end_year:str, date_of_input:str, version:str, target:str, train_start_year:str, train_end_year:str, features:list=['*']):
@@ -220,12 +222,12 @@ class MLDataHandler(DataHandler):
       return train_data, validation_data
     
     else:
-      prediction_path, output_path = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, None, None)
+      prediction_path, output_parquet_path, raster_output_path = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, None, None)
       
       selected_cols_pollutants = [col for col in selected_cols_pollutants if not (col.startswith('eRep') | col.startswith('e1b'))]
       prediction_data = self.data_handler.parquet_reader(prediction_path, features=selected_cols_pollutants)
       
-      return prediction_data, output_path
+      return prediction_data, output_parquet_path, raster_output_path
 
 # COMMAND ----------
 
@@ -234,7 +236,6 @@ class MLDataHandler(DataHandler):
 class PreProcessDataHandler(DataHandler):
   
   def __init__(self, pollutant:str):
-
     self.data_handler = DataHandler(pollutant)
     self.preprocess_input_data_path, self.preprocess_output_data_path = self.data_handler.config.select_preprocess_paths()
     
@@ -265,3 +266,124 @@ class PrepareTrainValPredDfs:
   """Necesitamos generar un dataframe final que junte X días para el train, Y días para el val y Z días para el predict 
   """
   pass
+
+# COMMAND ----------
+
+class MLWorker(MLModelsConfig):
+  
+  def __init__(self, pollutant, type_of_params):
+    self.ml_models_config = MLModelsConfig(pollutant, type_of_params)
+    self.model_to_train, self.ml_params = self.ml_models_config.prepare_model()
+
+  @staticmethod
+  def split_data(df: pd.DataFrame, train_size:float=0.7, label:list=None):
+    """Splits training dataframe into training and test dataframes to train and validate ML models
+    Params
+    ------
+      :df: pd.DataFrame = data we are willing to use to train de model
+      :train_size: float = percentage of the dataframe we are willing to use to train
+      :label: list = contains the value/s willing to predict
+      
+    Returns
+    -------
+      :X_train: str = data the model will use to train 
+      :X_test: str = unseen data the model will use to make predictions
+      :Y_train: str = values the model will use with the training set to train its predictions
+      :Y_test: str = unseen values the model will try to predict
+  """
+
+    # Separating values to be predicted from the data used to train
+    df_x = df[[col for col in df.columns if col not in label]]
+    df_y = df.select(label)
+
+    # Splitting the dataframe
+    X_train, X_test, Y_train, Y_test = model_selection.train_test_split(df_x, df_y, train_size=train_size, random_state=42)                        
+  
+    return X_train, X_test, Y_train, Y_test
+  
+  @staticmethod   
+  def train_load_ml_model(model_name:str = None, X_train_data:pd.DataFrame=None, Y_train_data:pd.DataFrame=None):
+    """Trains/loads (from azure experiments) a ML model.
+    Params
+    ------
+      :train_model_flag: bool = Flag to execute/skip training. If False, only predictions will take place (useful when validation)
+      :model: [Object, str] = If we pass a string indicating the name of a model it will look for it at our azure experiments otherwise it will execute the input model
+      :X_train_data: pd.DataFrame = data we are willing to use to train de model
+      :Y_train_data: pd.DataFrame = label we are willing to use to predict on the training set
+      
+    Returns
+    -------     
+      :ml_model: float = score our model obtained
+  """
+    
+    if isinstance(model_name, str):
+      client = mlflow.tracking.MlflowClient()
+      latest_version = client.get_latest_versions(model_name)
+      print(f'Loading and executing stored model {model_name} version {latest_version}...')
+      ml_model = mlflow.pyfunc.load_model(latest_version[0].source)
+  
+    else:
+#       print(f'Training model {str(self.ml_models_config.model_str)} with {self.ml_models_config.type_of_params} params: {self.ml_params}')
+      ml_model = model_name.fit(X_train_data, Y_train_data)
+
+    return ml_model
+    
+  @staticmethod   
+  def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame, bins:int=40):
+    """It will plot some plots showing performance of the model and feature importances (fscore).
+    Params
+    ------
+      :ml_model: Object = ML model we are willing to evaluate
+      :predictions: pd.DataFrame = obtained predictions from our model
+      :y_test_data: pd.DataFrame = label we are willing to predict and will use to check performance of the model 
+      
+    Returns
+    -------
+      :results: pd.DataFrame = predictions performed by our model and its actual value
+      :rmse: float = standard deviation of the residuals predicted from our model
+      :mape: float = mean of the absolute percentage errors predicted from our model (note that bad predictions can lead to arbitrarily large MAPE values, especially if some y_true values are very close to zero.).
+      :importance_scores: float = score given to each feature from our model based on fscore (number of times a variable is selected for splitting, weighted by the squared improvement to the model as a result of each split, and averaged over all trees)
+  """
+
+    # Get scores for model predictions
+    rmse = np.sqrt(mean_squared_error(y_test_data, predictions))
+    mape = mean_absolute_percentage_error(y_test_data, predictions)
+    try:
+      # Finding pollutant and target names in the y_test dataset columns
+      label = [col.split('_') for col in y_test_data.columns][0]
+      pollutant =  label[1] if len(label)>1 else label[0]
+      target =  label[0] 
+    except:
+      print('Pollutant and target names could not be found')
+
+    print(f"\n{pollutant}-{target} RMSE : {round(rmse, 3)}\n")
+    print(f"\n{pollutant}-{target} MAPE : {round(mape, 3)}%\n")
+
+    results = pd.concat([y_test_data.reset_index(drop=True), pd.DataFrame(predictions)], axis=1)
+    results.columns = ['actual', 'forecasted']
+
+    # Plotting lines for actuals vs forecasts data
+    fig = px.line(results)
+    fig.show()
+    
+    # Plot histogram showing errors in predictions
+    diff_results = results.actual - results.forecasted
+    diff_results.hist(bins=bins, figsize = (20,10))
+    plt.title('ML predict Errors distribution')
+
+    try:
+      # Feature importance of the trained model
+      fig, ax = plt.subplots(figsize=(12,12))
+      plot_importance(ml_model, ax=ax)
+      importance_scores = ml_model.get_booster().get_fscore()
+      plt.title(f'Feature importance (fscore) for target {target} & pollutant {pollutant}')
+      plt.show();
+    except:
+      print('Feature importance could not be calculated!')
+
+    return results, rmse, mape, importance_scores
+  
+  
+  def ml_executor(self):
+    """Add every above functions to generate a final pipeline where split data, training, validating, evaluation"""
+    pass
