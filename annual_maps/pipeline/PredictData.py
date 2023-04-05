@@ -20,10 +20,6 @@ DEFAULT_DATE_OF_INPUT = '20230201'
 
 DEFAULT_POLLUTANTS_LIST = ['PM10', 'PM25', 'O3', 'O3_SOMO10', 'O3_SOMO35', 'NO2']
 DEFAULT_TRAINSET_LIST = [ 'eRep', 'e1b']
-# DEFAULT_FEATURES_LIST = ['*', 'selected']
-# DEFAULT_PARAMS_LIST = ['optimized', 'test']
-# DEFAULT_STORE_MODEL_LIST = ['YES', 'NO']
-# DEFAULT_TRAIN_MODEL_LIST = ['YES', 'NO']
 DEFAULT_STORE_PREDICTIONS_LIST = ['YES', 'NO']
 
 # Set widgets for notebook
@@ -35,9 +31,7 @@ dbutils.widgets.text(name='Version', defaultValue=str(DEFAULT_VERSION), label='V
 dbutils.widgets.text(name='DateOfInput', defaultValue=str(DEFAULT_DATE_OF_INPUT), label='Date of Input')                            # ? Check the db every time to get the dateofinput?  # Idea generate a droprdown widget + listdir from db
 
 dbutils.widgets.multiselect('Pollutants', 'PM10', DEFAULT_POLLUTANTS_LIST, label='Pollutants')
-dbutils.widgets.multiselect('Trainset', "eRep", DEFAULT_TRAINSET_LIST, label='Trainset')                         
-# dbutils.widgets.dropdown('Features', 'selected', DEFAULT_FEATURES_LIST, label='Features')  
-# dbutils.widgets.dropdown('TypeOfParams', 'optimized', DEFAULT_PARAMS_LIST, label='Type of params')  
+dbutils.widgets.multiselect('Trainset', "eRep", DEFAULT_TRAINSET_LIST, label='Trainset')                          
 dbutils.widgets.dropdown('StorePredictions', 'NO', DEFAULT_STORE_PREDICTIONS_LIST, label='Store Predictions')  
 
 
@@ -78,6 +72,9 @@ gdal.SetConfigOption('CPL_VSIL_CURL_ALLOWED_EXTENSIONS', '.tif')
 # Import EEA Databricks utils.
 exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/fsutils.py').read(), 'fsutils.py', 'exec'))
 exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 'calcgrid.py', 'exec'))
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/eeadatabricksutils.py').read(), 'eeadatabricksutils.py', 'exec'))
+exec(compile(eea_databricks_framework_initialize(), '', 'exec'))
+
 gridid2laea_x_udf = spark.udf.register('gridid2laea_x', CalcGridFunctions.gridid2laea_x, LongType())
 gridid2laea_y_udf = spark.udf.register('gridid2laea_y', CalcGridFunctions.gridid2laea_y, LongType())
 
@@ -100,17 +97,14 @@ pollutants:list = dbutils.widgets.get('Pollutants').split(',')
 trainset:list = dbutils.widgets.get('Trainset').split(',')
 date_of_input:str = dbutils.widgets.get('DateOfInput')
 version:str = dbutils.widgets.get('Version')
-features:list = ['selected'] # dbutils.widgets.get('Features') if isinstance(dbutils.widgets.get('Features'), list) else [dbutils.widgets.get('Features')]
-# type_of_params:str = dbutils.widgets.get('TypeOfParams')
+features:list = ['selected'] 
 store_predictions:bool = True if dbutils.widgets.get('StorePredictions') == 'YES' else False
 
 
-logging.info(f'Your chosen parameters: predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", store_predictions:"{store_predictions}"')
+logging.info(f'Your chosen parameters to PREDICT: predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", store_predictions:"{store_predictions}"')
 
 if len(trainset)>1: logging.warning(f'You have chosen more than 1 values for Trainset: {trainset}')
 if predval_end_year < predval_start_year: raise Exception('End dates cannot be earlier than starting dates. Double check!') 
-# if featurs[0]!='selected': logging.warning(f'You have chosen to use ALL FEATURES for predicting data. Pretrained models only work with features used in its training...')
-# if type_of_params!='optimized': logging.warning(f'You have chosen to use TEST params for predicting data. Pretrained models only work with parameters used in its training...')
 
 
 # COMMAND ----------
@@ -289,7 +283,7 @@ for pollutant in pollutants:
     predictions = None
 
     if store_predictions:
-      logging.info('Writing parquet file {} '.format(output_parquet_path))
+      logging.info('Writing parquet file into {} '.format(output_parquet_path))
       ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path)
       df_spark = spark.createDataFrame(ml_outputs)
       
@@ -310,7 +304,7 @@ for pollutant in pollutants:
 
       ml_outputs_df_xy.unpersist()
       
-logging.info(f'Finished!')
+logging.info(f'Finished predictions!')
 
 
 # Note if we add some more features/rows to the df, we might need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
@@ -318,64 +312,10 @@ logging.info(f'Finished!')
 
 # COMMAND ----------
 
-
+# Plot predictions
+my_map = FoliumUtils.create_folium_map_from_table(map_content_args={'table': ml_outputs_df_xy, 'attributes': [pollutant]})
+display(my_map)
 
 # COMMAND ----------
 
-# for pollutant in pollutants:   
-  
-# # In case we have different target variables i.e.: eRep and e1b.
-#   for target in trainset:
-#     logging.info(f'Processing pollutant: {pollutant} target {target}.')
-#     label = [target + '_' + pollutant.upper()][0]
-# #     ml_models_config = MLModelsConfig(pollutant, type_of_params)        
-#     ml_worker = MLWorker(pollutant, type_of_params)
-#     ml_data_handler = MLDataHandler(pollutant)
-
-#     # Prediction inputs data                                                                   ????? shall we also concatenate preds dataset into the final model training????
-#     pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
-
-#     # Predicting data using a stored pretrained model
-#     model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"}
-#     logging.info(f'Performing predictions with the latest version from the pretrained loaded model: {model_to_train_details["model_name"]} ')
-#     pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
-#     logging.info(f'Performing predictions with features:\n {pollutant_prediction_data_pd.count()}')
-
-#     trained_model = train_load_ml_model(train_model_flag=False, model=model_to_train_details['model_name'], X_train_data=None, Y_train_data=None)
-#     predictions = trained_model.predict(pollutant_prediction_data_pd)
-
-#     predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
-#     ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
-
-#     # Dealing with memory issues
-#     predictions_df = None
-#     pollutant_prediction_data_pd = None
-#     predictions = None
-
-#     if store_predictions:
-#       logging.info('Writing parquet file {} '.format(output_parquet_path))
-#       ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path)
-#       df_spark = spark.createDataFrame(ml_outputs)
-      
-#       # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
-#       ml_outputs_df_xy = df_spark \
-#                                     .withColumnRenamed('x', 'x_old') \
-#                                     .withColumnRenamed('y', 'y_old') \
-#                                     .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
-#                                     .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
-#       ml_outputs = None
-#       df_spark = None
-
-#       ml_outputs_df_xy = ml_outputs_df_xy.cache()
-
-#       # Write to geotiff       
-#       logging.info('Writing geotiff file {} '.format(raster_output_path))
-#       write_dataset_to_raster(output_raster_path='/dbfs'+ raster_output_path, dataset=ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
-
-#       ml_outputs_df_xy.unpersist()
-      
-# logging.info(f'Finished!')
-
-
-# # Note if we add some more features/rows to the df, we might need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
 

@@ -10,7 +10,7 @@ from xgboost import XGBRegressor
 class DataHandlerConfig:
   """Configuration to collect data.
       - You should only need to modify strings within this class
-  """
+      """
   
   @staticmethod
   def select_container():
@@ -31,21 +31,23 @@ class DataHandlerConfig:
     return path
   
   @staticmethod
-  def select_ml_paths():
+  def select_ml_paths(path_to_return:str=None):
     """Paths at our container storing our desired data for ML purposes
     """
+
     train_path_struct: str = '/ML_Input/data-{}_{}-{}/{}_{}/training_input_{}_{}_{}-{}.parquet'        # pollutant, predval_start_year, predval_end_year, date_of_input, version, target, pollutant, train_start_year, train_end_year
     validation_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/validation_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
     prediction_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/prediction_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
     output_parquet_path_struct:str = '/ML_Output/{}_{}-{}_{}_maps_TEST.parquet'                                     # pollutant, predval_start_year, predval_end_year, date_of_input
     raster_outputs_path_struct:str = '/ML_Output/GeoTiffs/{}_{}_{}/{}_1km_{}_{}_0_Europe_EEA_ML_XGB_TEST.tiff'  # predyear, code, agg, predyear, code, agg, ml_models_config.model_str[:2]
 
-    
+    if path_to_return:
+      return eval(path_to_return.lower())
     return train_path_struct, validation_path_struct, prediction_path_struct, output_parquet_path_struct, raster_outputs_path_struct
   
   
   @staticmethod
-  def select_cols(pollutant):
+  def select_cols(pollutant_to_return:str=None):
     """Columns we are willing to collect from parquet files
     """
     no2 =  ['AreaHa',                           
@@ -230,7 +232,7 @@ class DataHandlerConfig:
                 # 'sum_envzones_MDS'
                 ]
 
-    return eval(pollutant.lower())
+    return eval(pollutant_to_return.lower())
                         
 
 # COMMAND ----------

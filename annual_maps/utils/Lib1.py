@@ -79,17 +79,17 @@ class DataHandler(DataHandlerConfig):
     Params
     ------
       :path_to_parket: str = Name of the parquet file storing the desired data
-      :features: str = Columns' name we are willing to query
+      :features: list = Columns' name we are willing to query
 
     Returns
     -------
-      :temp_df_filtered: str = Dataframe stored in the target parquet file
+      :parquet_data_filtered: str = Dataframe stored in the target parquet file
     """
     
-    temp_df = spark.read.parquet(self.file_system_path+path_to_parket)
-    temp_df_filtered = temp_df.select(features)
+    parquet_data = spark.read.parquet(self.file_system_path+path_to_parket)
+    parquet_data_filtered = parquet_data.select(features)
     
-    return temp_df_filtered
+    return parquet_data_filtered
     
 
   def tiff_reader(self, path_to_tiff:str):
@@ -162,7 +162,7 @@ class DataHandler(DataHandlerConfig):
 
     Returns
     -------
-      :duplicated_rows_df: pd.DataFrame = Duplicated rows
+      :duplicated_rows_df: pd.DataFrame = Common rows found at both dataframes
     """
 
     duplicated_rows_df = df1[cols_to_compare].intersect(df2[cols_to_compare])
@@ -295,7 +295,7 @@ class MLWorker(MLModelsConfig):
       :X_test: str = unseen data the model will use to make predictions
       :Y_train: str = values the model will use with the training set to train its predictions
       :Y_test: str = unseen values the model will try to predict
-  """
+      """
 
     # Separating values to be predicted from the data used to train
     df_x = df[[col for col in df.columns if col not in label]]
@@ -311,15 +311,14 @@ class MLWorker(MLModelsConfig):
     """Trains/loads (from azure experiments) a ML model.
     Params
     ------
-      :train_model_flag: bool = Flag to execute/skip training. If False, only predictions will take place (useful when validation)
-      :model: [Object, str] = If we pass a string indicating the name of a model it will look for it at our azure experiments otherwise it will execute the input model
+      :model_name: [Object, str] = If we pass a string indicating the name of a model it will look for it at our azure experiments otherwise it will execute the input model
       :X_train_data: pd.DataFrame = data we are willing to use to train de model
       :Y_train_data: pd.DataFrame = label we are willing to use to predict on the training set
       
     Returns
     -------     
       :ml_model: float = score our model obtained
-  """
+      """
     
     if isinstance(model_name, str):
       client = mlflow.tracking.MlflowClient()
@@ -328,19 +327,19 @@ class MLWorker(MLModelsConfig):
       ml_model = mlflow.pyfunc.load_model(latest_version[0].source)
   
     else:
-#       print(f'Training model {str(self.ml_models_config.model_str)} with {self.ml_models_config.type_of_params} params: {self.ml_params}')
       ml_model = model_name.fit(X_train_data, Y_train_data)
 
     return ml_model
     
   @staticmethod   
   def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame, bins:int=40):
-    """It will plot some plots showing performance of the model and feature importances (fscore).
+    """Metrics and charts to evaluate performance of the ML model
     Params
     ------
       :ml_model: Object = ML model we are willing to evaluate
       :predictions: pd.DataFrame = obtained predictions from our model
       :y_test_data: pd.DataFrame = label we are willing to predict and will use to check performance of the model 
+      :bins: int = Number of columns we are willing to plot to show results
       
     Returns
     -------
@@ -348,7 +347,7 @@ class MLWorker(MLModelsConfig):
       :rmse: float = standard deviation of the residuals predicted from our model
       :mape: float = mean of the absolute percentage errors predicted from our model (note that bad predictions can lead to arbitrarily large MAPE values, especially if some y_true values are very close to zero.).
       :importance_scores: float = score given to each feature from our model based on fscore (number of times a variable is selected for splitting, weighted by the squared improvement to the model as a result of each split, and averaged over all trees)
-  """
+      """
 
     # Get scores for model predictions
     rmse = np.sqrt(mean_squared_error(y_test_data, predictions))
@@ -385,7 +384,8 @@ class MLWorker(MLModelsConfig):
       plt.show();
     except:
       print('Feature importance could not be calculated! This may occur when you load a pretrained model...')
-      return results, rmse, mape
+      
+      return results, rmse, mape, _
     
     return results, rmse, mape, importance_scores
   
