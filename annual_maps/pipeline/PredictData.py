@@ -1,4 +1,32 @@
 # Databricks notebook source
+"""
+================================================================================
+Notebook to execute predictions of the pollutants. We should only need to modify the widgets for normal executions.
+We will obtain a parquet + tiff files containing the forecasted values inside the selected paths at our config.py file.
+
+
+Arguments:
+  + date_of_input: date used to build the path where we are storing our input data
+  + pollutants: list of pollutants we are willing to forecast 
+  + predval_end_year: last date for the interval we are willing to forecast
+  + predval_start_year: starting date for the period we are willing to forecast
+  + store_predictions: bool to determine if we want to store our predictions or not 
+  + train_end_year: last date we used to train the model (used for the naming of the ML model stored at Azure Experiments)
+  + train_start_year: first date we used to train the model (used for the naming of the ML model stored at Azure Experiments)
+  + trainset: list of the targets we are willing to predict 
+  + version: version of the model (used for naming) 
+
+================================================================================
+
+Project  : EEA Azure platform tools.
+EEA Task : https://taskman.eionet.europa.eu/issues/157021
+Author   : aiborra-ext@tracasa.es
+
+================================================================================
+"""
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 0. Adding Notebook Input widgets
 
@@ -46,11 +74,7 @@ dbutils.widgets.dropdown('StorePredictions', 'NO', DEFAULT_STORE_PREDICTIONS_LIS
 
 # COMMAND ----------
 
-# MAGIC %run "../utils/Lib1"
-
-# COMMAND ----------
-
-# MAGIC %run "../config/ConfigFile"
+# MAGIC %run "../utils/Lib"
 
 # COMMAND ----------
 
@@ -312,9 +336,17 @@ logging.info(f'Finished predictions!')
 
 # COMMAND ----------
 
-# Plot predictions
-my_map = FoliumUtils.create_folium_map_from_table(map_content_args={'table': ml_outputs_df_xy, 'attributes': [pollutant]})
-display(my_map)
+# # Plot predictions
+# df_spark = spark.createDataFrame(ml_outputs)
+# ml_outputs_df_xy = df_spark \
+#                               .withColumnRenamed('x', 'x_old') \
+#                               .withColumnRenamed('y', 'y_old') \
+#                               .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+#                               .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+# ml_outputs = None
+# df_spark = None
+# my_map = FoliumUtils.create_folium_map_from_table(map_content_args={'table': ml_outputs_df_xy, 'attributes': [pollutant]})
+# display(my_map)
 
 # COMMAND ----------
 

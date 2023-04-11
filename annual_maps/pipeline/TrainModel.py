@@ -1,4 +1,34 @@
 # Databricks notebook source
+"""
+================================================================================
+Notebook to train a ML model used for predictions of the pollutants. We should only need to modify the widgets for normal executions.
+We will store (or not) a trained model into our AzureML experiments + metrics for evaluating results of the model
+
+Arguments:
+  + date_of_input: date used to build the path where we are storing our input data
+  + features: cols we are willing to use to train our model (all vs selected at our config file)
+  + pollutants: list of pollutants we are willing to forecast 
+  + predval_end_year: last date for the interval we are willing to forecast (or use for validation)
+  + predval_start_year: starting date for the period we are willing to forecast (or use for validation)
+  + store_trained_model: bool to determine if we want to store our trained ML model or not 
+  + train_end_year: last date we used to train the model (used for the naming of the ML model stored at Azure Experiments)
+  + train_start_year: first date we used to train the model (used for the naming of the ML model stored at Azure Experiments)
+  + train_model: bool to determine if we want to train a new model or use an existing (pretrained) one
+  + trainset: list of the targets we are willing to predict 
+  + type_of_params: parameters we will use in our training ML model (test vs optimized)
+  + version: version of the model (used for naming) 
+
+================================================================================
+
+Project  : EEA Azure platform tools.
+EEA Task : https://taskman.eionet.europa.eu/issues/157021
+Author   : aiborra-ext@tracasa.es
+
+================================================================================
+"""
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # 0. Adding Notebook Input widgets
 
@@ -76,11 +106,7 @@ dbutils.widgets.dropdown('TrainPretrained', 'Train', DEFAULT_TRAIN_MODEL_LIST, l
 
 # COMMAND ----------
 
-# MAGIC %run "../utils/Lib1"
-
-# COMMAND ----------
-
-# MAGIC %run "../config/ConfigFile"
+# MAGIC %run "../utils/Lib"
 
 # COMMAND ----------
 
@@ -127,7 +153,10 @@ logging.info(f'Your chosen parameters to TRAIN: train_start_year: "{train_start_
 
 if len(trainset)>1: logging.warning(f'You have chosen more than 1 values for Trainset: {trainset}')
 if (train_end_year < train_start_year) or (predval_end_year < predval_start_year): raise Exception('End dates cannot be earlier than starting dates. Double check!') 
- 
+if train_model==False and type_of_params=='test': logging.warning('You have chosen to use a pretrained model so your testing parameters will not be used...')
+if train_model==False and features[0]=='*': logging.warning('You have chosen to use a pretrained model so your features "*" will be filtered to the ones the model was trained...')
+if train_model==False and store_model==True: logging.warning('You have chosen to use a pretrained model so it is stored already!')
+
 
 # COMMAND ----------
 
@@ -171,8 +200,8 @@ for pollutant in pollutants:
     if store_model:
       # Training final model: joining training + validation sets                             ????? shall we also concatenate preds dataset into the final model training????
       train_val_X, train_val_Y = pd.concat([X_train, validation_X]), pd.concat([Y_train, validation_Y])
-      logging.info(f'Joining training and validation datasets... We will train the final model with: \n{train_val_X.count()} \n')
-      
+      logging.info(f'Joining training and validation datasets... We will train the final model with: \n{train_val_X.count()}. Evaluations will not be performed \n')
+
       # Storing trained model into AzureML experiments
       with mlflow.start_run():
         mlflow.autolog()
@@ -192,6 +221,7 @@ for pollutant in pollutants:
       else:
         # In case we are willing to re-evaluate an existing pretrained model
         logging.info(f'Loading pretrained model {model_to_train_details["model_name"]}')
+        logging.warning(f'Note you are using a pretrained model so, feature importances will not be plot.')
         trained_model = ml_worker.train_load_ml_model(model_name=model_to_train_details['model_name'], X_train_data=X_train, Y_train_data=Y_train)
         
       predictions = trained_model.predict(validation_X)

@@ -183,14 +183,14 @@ def plot_corr_vif (corr_vif_features: pd.DataFrame, pollutant:str, target:str = 
 # COMMAND ----------
 
 for pollutant in pollutants:   
-  data_handler = DataHandler(pollutant)
+  ml_data_handler = MLDataHandler(pollutant)
   
 # In case we have different target variables i.e.: eRep and e1b.
   for target in trainset:
     logging.info(f'Processing pollutant: {pollutant} target {target}.')
     label = [target + '_' + pollutant.upper()][0]
     # Collecting data
-    pollutant_train_data, pollutant_validation_data = data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
+    pollutant_train_data, pollutant_validation_data = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
     logging.info('Data pollutant collected!')
 
 
@@ -212,7 +212,7 @@ for pollutant in pollutants:
 
       logging.info('Correlation and VIF calculated succesfully! Plotting charts...')
       plot_corr_vif(corr_vif_features, pollutant, target)
-      
+      display(corr_vif_features)
       features_data.unpersist()
     except:
       if not features_data: logging.info(f'Something went wrong! Please, revisit input params...')

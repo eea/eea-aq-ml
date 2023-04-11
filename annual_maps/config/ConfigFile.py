@@ -1,4 +1,22 @@
 # Databricks notebook source
+"""
+================================================================================
+Notebook to configure the execution of the scripts performing the training/prediction of the pollutants.
+Herein we will be ablo to modify input/output paths, features (cols) we are willing to use to execute predictions and ML algorithm + its parameters.
+
+We should only need to modify strings we can find inside classes to perform different trainings/predictions.
+
+================================================================================
+
+Project  : EEA Azure platform tools.
+EEA Task : https://taskman.eionet.europa.eu/issues/157021
+Author   : aiborra-ext@tracasa.es
+
+================================================================================
+"""
+
+# COMMAND ----------
+
 from dataclasses import dataclass
 exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/fsutils.py').read(), 'fsutils.py', 'exec'))
 
@@ -24,7 +42,7 @@ class DataHandlerConfig:
   
   @staticmethod
   def select_preprocess_paths():
-    """Paths at our container storing our desired data for data preprocessing
+    """Paths at our container storing our desired data for preprocessing
     """
     path:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}.tiff'                                     # pollutant, year, month, pollutant, year, month, day
     
@@ -232,7 +250,10 @@ class DataHandlerConfig:
                 # 'sum_envzones_MDS'
                 ]
 
-    return eval(pollutant_to_return.lower())
+    if pollutant_to_return:
+      return eval(pollutant_to_return.lower())
+      
+    return no2, pm10, pm25, o3_somo10, o3_somo25
                         
 
 # COMMAND ----------
