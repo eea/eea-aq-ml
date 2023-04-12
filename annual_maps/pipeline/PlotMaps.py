@@ -1,4 +1,9 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # 0. Adding Notebook Input widgets
+
+# COMMAND ----------
+
 """
 ================================================================================
 Notebook showing results in a Folium map. We should only need to modify the widgets for normal executions.
@@ -18,13 +23,6 @@ Author   : aiborra-ext@tracasa.es
 
 ================================================================================
 """
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # 0. Adding Notebook Input widgets
-
-# COMMAND ----------
 
 DEFAULT_PREDVAL_START = '2020'
 DEFAULT_PREDVAL_END = '2020'
@@ -61,6 +59,10 @@ exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/calcgrid.py').read(), 
 gridid2laea_x_udf = spark.udf.register('gridid2laea_x', CalcGridFunctions.gridid2laea_x, LongType())
 gridid2laea_y_udf = spark.udf.register('gridid2laea_y', CalcGridFunctions.gridid2laea_y, LongType())
 
+# Preparing logging resources using the NotebookSingletonManager.
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/notebookutils.py').read(), 'notebookutils.py', 'exec'))
+notebook_mgr = NotebookSingletonManager(logging_path='/dbfs'+'/mnt/dis2datalake_airquality-predictions', logging_mode='w')
+
 # Preparing logs configuration
 logging.basicConfig(
     format = '%(asctime)s %(levelname)-8s %(message)s', 
@@ -88,31 +90,45 @@ logging.info(f'Your chosen parameters to PLOT: predval_start_year: "{predval_sta
 
 # COMMAND ----------
 
-for pollutant in pollutants:   
-  
-  # In case we have different target variables i.e.: eRep and e1b.
-  for target in trainset:
-    # Collecting forecasted data
-    data_handler = DataHandler(pollutant)
-    predictions_path = data_handler.config.select_ml_paths(path_to_return='output_parquet_path_struct').format(pollutant, predval_start_year, predval_end_year, date_of_input)
-    logging.info(f'Collecting data from {predictions_path}')
-    predictions_data = data_handler.parquet_reader(path_to_parket=predictions_path)
+try:
+  for pollutant in pollutants:   
+    # In case we have different target variables i.e.: eRep and e1b.
+    for target in trainset:
+      # Collecting forecasted data
+      data_handler = DataHandler(pollutant)
+      predictions_path = data_handler.config.select_ml_paths(path_to_return='output_parquet_path_struct').format(pollutant, predval_start_year, predval_end_year, date_of_input)
+      logging.info(f'Collecting data from {predictions_path}')
+      predictions_data = data_handler.parquet_reader(path_to_parket=predictions_path)
 
-    # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
-    logging.info('Data collected! Adding coordinates X and Y to plot maps...')
-    ml_outputs_df_xy = predictions_data \
-                                  .withColumnRenamed('x', 'x_old') \
-                                  .withColumnRenamed('y', 'y_old') \
-                                  .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
-                                  .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+      # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
+      logging.info('Data collected! Adding coordinates X and Y to plot maps...')
+      ml_outputs_df_xy = predictions_data \
+                                    .withColumnRenamed('x', 'x_old') \
+                                    .withColumnRenamed('y', 'y_old') \
+                                    .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+                                    .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
 
-    # Plot predictions
-    my_map = FoliumUtils.create_folium_map_from_table(map_content_args={'table': ml_outputs_df_xy, 'attributes': [pollutant]})
-    display(my_map)
+      # Plot predictions
+      my_map = FoliumUtils.create_folium_map_from_table(map_content_args={'table': ml_outputs_df_xy, 'attributes': [pollutant]})
+      display(my_map)
+  logging.info('Finished plots!')
 
-logging.info('Finished plots!')
+except Exception as e:
+    message = '{}\n{}'.format(str(e), traceback.format_exc())
+    notebook_mgr.exit(status='ERROR', message=message, options={'PredValStartDate': str(predval_start_year),'PredValEndDate': str(predval_end_year),'Pollutants': str(pollutants),'Trainset': str(trainset),'DateOfInput': str(date_of_input)})
+
+
 
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC # 3. Finishing Job
+
+# COMMAND ----------
+
+
+# Notify SUCCESS and Exit.
+notebook_mgr.exit(status='SUCCESS', message='', options={'PredValStartDate': str(predval_start_year),'PredValEndDate': str(predval_end_year),'Pollutants': str(pollutants),'Trainset': str(trainset),'DateOfInput': str(date_of_input)})
+notebook_mgr = None
 

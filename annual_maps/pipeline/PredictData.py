@@ -1,4 +1,15 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # 0. Adding Notebook Input widgets
+
+# COMMAND ----------
+
+# dbutils.widgets.removeAll()
+
+
+# COMMAND ----------
+
+
 """
 ================================================================================
 Notebook to execute predictions of the pollutants. We should only need to modify the widgets for normal executions.
@@ -24,19 +35,6 @@ Author   : aiborra-ext@tracasa.es
 
 ================================================================================
 """
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # 0. Adding Notebook Input widgets
-
-# COMMAND ----------
-
-# dbutils.widgets.removeAll()
-
-
-# COMMAND ----------
-
 
 # Set default parameters for input widgets
 DEFAULT_TRAIN_START = '2016'
@@ -79,10 +77,9 @@ dbutils.widgets.dropdown('StorePredictions', 'NO', DEFAULT_STORE_PREDICTIONS_LIS
 # COMMAND ----------
 
 import logging
-from pyspark.sql.types import LongType
 import pyspark.sql.functions as F
 
-
+from pyspark.sql.types import LongType
 from osgeo import gdal
 from osgeo import osr
 
@@ -103,13 +100,16 @@ gridid2laea_x_udf = spark.udf.register('gridid2laea_x', CalcGridFunctions.gridid
 gridid2laea_y_udf = spark.udf.register('gridid2laea_y', CalcGridFunctions.gridid2laea_y, LongType())
 
 
+# Preparing logging resources using the NotebookSingletonManager.
+exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/notebookutils.py').read(), 'notebookutils.py', 'exec'))
+notebook_mgr = NotebookSingletonManager(logging_path='/dbfs'+'/mnt/dis2datalake_airquality-predictions', logging_mode='w')
+
 # Preparing logs configuration
 logging.basicConfig(
     format = '%(asctime)s %(levelname)-8s %(message)s', 
     level  = logging.INFO,
 )
 logging.getLogger("py4j").setLevel(logging.ERROR)
-
 
 
 # Adding input variables from widgets
@@ -121,11 +121,10 @@ pollutants:list = dbutils.widgets.get('Pollutants').split(',')
 trainset:list = dbutils.widgets.get('Trainset').split(',')
 date_of_input:str = dbutils.widgets.get('DateOfInput')
 version:str = dbutils.widgets.get('Version')
-features:list = ['selected'] 
 store_predictions:bool = True if dbutils.widgets.get('StorePredictions') == 'YES' else False
 
 
-logging.info(f'Your chosen parameters to PREDICT: predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", store_predictions:"{store_predictions}"')
+logging.info(f'Your chosen parameters to PREDICT: train_start_year: "{train_start_year}", train_end_year: "{train_end_year}",  predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", store_predictions:"{store_predictions}"')
 
 if len(trainset)>1: logging.warning(f'You have chosen more than 1 values for Trainset: {trainset}')
 if predval_end_year < predval_start_year: raise Exception('End dates cannot be earlier than starting dates. Double check!') 
@@ -276,59 +275,64 @@ def write_dataset_to_raster(output_raster_path, dataset, attribute, x_attrib='x'
 
 # COMMAND ----------
 
-for pollutant in pollutants:   
-  
-# In case we have different target variables i.e.: eRep and e1b.
-  for target in trainset:
-    logging.info(f'Processing pollutant: {pollutant} target {target}.')
-    label = [target + '_' + pollutant.upper()][0]
+try:
+  for pollutant in pollutants:     
+  # In case we have different target variables i.e.: eRep and e1b.
+    for target in trainset:
+      logging.info(f'Processing pollutant: {pollutant} target {target}.')
+      label = [target + '_' + pollutant.upper()][0]
 
-    ml_worker = MLWorker(pollutant)
-    ml_data_handler = MLDataHandler(pollutant)
+      ml_worker = MLWorker(pollutant)
+      ml_data_handler = MLDataHandler(pollutant)
 
-    # Prediction inputs data                                                                   ????? shall we also concatenate preds dataset into the final model training????
-    pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features)
-    logging.info('Data pollutant collected!')
-    pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
-    
-    # Loading pretrained model and executing predictions
-    model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"}
-    trained_model = ml_worker.train_load_ml_model(model_name=model_to_train_details['model_name'], X_train_data=None, Y_train_data=None)
-    logging.info(f'Performing predictions with features:\n {pollutant_prediction_data_pd.count()}')
-    predictions = trained_model.predict(pollutant_prediction_data_pd)
-    
-    # Joining predictions with their gridnum and year
-    predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
-    ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
-
-    # Dealing with memory issues
-    predictions_df = None
-    pollutant_prediction_data_pd = None
-    predictions = None
-
-    if store_predictions:
-      logging.info('Writing parquet file into {} '.format(output_parquet_path))
-      ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path)
-      df_spark = spark.createDataFrame(ml_outputs)
+      # Prediction inputs data                                                                   ????? shall we also concatenate preds dataset into the final model training????
+      pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features=['selected'])
+      logging.info('Data pollutant collected!')
+      pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
       
-      # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
-      ml_outputs_df_xy = df_spark \
-                                    .withColumnRenamed('x', 'x_old') \
-                                    .withColumnRenamed('y', 'y_old') \
-                                    .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
-                                    .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
-      ml_outputs = None
-      df_spark = None
-
-      ml_outputs_df_xy = ml_outputs_df_xy.cache()
-
-      # Write to geotiff       
-      logging.info('Writing geotiff file into {} '.format(raster_output_path))
-      write_dataset_to_raster(output_raster_path='/dbfs'+ raster_output_path, dataset=ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
-
-      ml_outputs_df_xy.unpersist()
+      # Loading pretrained model and executing predictions
+      model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"}
+      trained_model = ml_worker.train_load_ml_model(model_name=model_to_train_details['model_name'], X_train_data=None, Y_train_data=None)
+      logging.info(f'Performing predictions with features:\n {pollutant_prediction_data_pd.count()}')
+      predictions = trained_model.predict(pollutant_prediction_data_pd)
       
-logging.info(f'Finished predictions!')
+      # Joining predictions with their gridnum and year
+      predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
+      ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
+
+      # Dealing with memory issues
+      predictions_df = None
+      pollutant_prediction_data_pd = None
+      predictions = None
+
+      if store_predictions:
+        logging.info('Writing parquet file into {} '.format(output_parquet_path))
+        ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path)
+        df_spark = spark.createDataFrame(ml_outputs)
+        
+        # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
+        ml_outputs_df_xy = df_spark \
+                                      .withColumnRenamed('x', 'x_old') \
+                                      .withColumnRenamed('y', 'y_old') \
+                                      .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+                                      .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+        ml_outputs = None
+        df_spark = None
+
+        ml_outputs_df_xy = ml_outputs_df_xy.cache()
+
+        # Write to geotiff       
+        logging.info('Writing geotiff file into {} '.format(raster_output_path))
+        write_dataset_to_raster(output_raster_path='/dbfs'+ raster_output_path, dataset=ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
+
+        ml_outputs_df_xy.unpersist()
+      
+  logging.info(f'Finished predictions!')
+
+except Exception as e:
+    message = '{}\n{}'.format(str(e), traceback.format_exc())
+    notebook_mgr.exit(status='ERROR', message=message, options={'TrainStartDate': str(train_start_year), 'TrainEndDate': str(train_end_year), 'PredValStartDate': str(predval_start_year),'PredValEndDate': str(predval_end_year),'Pollutants': str(pollutants),'Trainset': str(trainset),'DateOfInput': str(date_of_input),'Version': str(version),'StorePredictions': str(store_predictions)})
+
 
 
 # Note if we add some more features/rows to the df, we might need to use SPARK xgboost regressor since pandas cannot support it. If we add it now, we might be using spark for few data (unneficient)
@@ -350,4 +354,14 @@ logging.info(f'Finished predictions!')
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC # 3. Finishing Job
+
+# COMMAND ----------
+
+
+# Notify SUCCESS and Exit.
+notebook_mgr.exit(status='SUCCESS', message='', options={'TrainStartDate': str(train_start_year), 'TrainEndDate': str(train_end_year), 'PredValStartDate': str(predval_start_year),'PredValEndDate': str(predval_end_year),'Pollutants': str(pollutants),'Trainset': str(trainset),'DateOfInput': str(date_of_input),'Version': str(version),'StorePredictions': str(store_predictions)})
+
+notebook_mgr = None
 

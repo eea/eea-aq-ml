@@ -4,6 +4,19 @@
 
 # COMMAND ----------
 
+"""
+================================================================================
+Notebook to perform a feature analysis based on correlation and VIF
+
+================================================================================
+
+Project  : EEA Azure platform tools.
+EEA Task : https://taskman.eionet.europa.eu/issues/157021
+Author   : aiborra-ext@tracasa.es
+
+================================================================================
+"""
+
 # dbutils.widgets.removeAll()
 
 # Set default parameters for input widgets

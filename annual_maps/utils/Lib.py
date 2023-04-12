@@ -13,19 +13,17 @@ Author   : aiborra-ext@tracasa.es
 ================================================================================
 """
 
-# COMMAND ----------
-
 import sys
+import mlflow
 import logging
+
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import plotly.express as px
+
 from sklearn import model_selection
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
-
-import mlflow
-
 from patsy import dmatrix
 from pyspark.sql.functions import col
 from xgboost import XGBRegressor, plot_importance

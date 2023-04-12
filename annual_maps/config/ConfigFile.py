@@ -15,12 +15,11 @@ Author   : aiborra-ext@tracasa.es
 ================================================================================
 """
 
-# COMMAND ----------
-
 from dataclasses import dataclass
+from xgboost import XGBRegressor
+
 exec(compile(open('/dbfs/FileStore/scripts/eea/databricks/fsutils.py').read(), 'fsutils.py', 'exec'))
 
-from xgboost import XGBRegressor
 
 
 # COMMAND ----------

@@ -1,4 +1,13 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC # 0. Adding Notebook Input widgets
+
+# COMMAND ----------
+
+# dbutils.widgets.removeAll()
+
+# COMMAND ----------
+
 """
 ================================================================================
 Notebook to train a ML model used for predictions of the pollutants. We should only need to modify the widgets for normal executions.
@@ -26,18 +35,6 @@ Author   : aiborra-ext@tracasa.es
 
 ================================================================================
 """
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # 0. Adding Notebook Input widgets
-
-# COMMAND ----------
-
-# dbutils.widgets.removeAll()
-
-# COMMAND ----------
-
 
 # Set default parameters for input widgets
 DEFAULT_TRAIN_START = '2016'
@@ -149,7 +146,7 @@ train_model:bool = True if dbutils.widgets.get('TrainPretrained') == 'Train' els
 store_model:bool = True if dbutils.widgets.get('StoreModel') == 'YES' else False
 
 
-logging.info(f'Your chosen parameters to TRAIN: train_start_year: "{train_start_year}", train_end_year: "{train_end_year}", predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", features: {features}, type_of_params: "{type_of_params}", store_model: {store_model}, train_model: {train_model}')
+logging.info(f'Your chosen parameters to TRAIN: train_start_year: "{train_start_year}", train_end_year: "{train_end_year}", predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", features: {features}, type_of_params: "{type_of_params}", train_model: {train_model}, store_model: {store_model}')
 
 if len(trainset)>1: logging.warning(f'You have chosen more than 1 values for Trainset: {trainset}')
 if (train_end_year < train_start_year) or (predval_end_year < predval_start_year): raise Exception('End dates cannot be earlier than starting dates. Double check!') 
@@ -229,7 +226,3 @@ for pollutant in pollutants:
 
 
 logging.info(f'Finished training!')
-
-# COMMAND ----------
-
-
