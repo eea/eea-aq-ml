@@ -19,3 +19,5 @@ RUN python3 -m pip install gdal==2.4.0
 RUN python3 -m pip install azure-data-tables
 
 RUN python3 -m pip install tweepy
+
+RUN python3 -m pip install firebase_admin
