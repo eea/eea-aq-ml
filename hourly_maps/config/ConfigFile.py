@@ -54,7 +54,7 @@ class DataHandlerConfig:
     """Paths at our container storing our desired data for ML purposes
     """
 
-    train_path_struct: str = '/ML_Input/episodes/{}_hourly_ml_inputs.parquet'        # pollutant, predval_start_year, predval_end_year, date_of_input, version, target, pollutant, train_start_year, train_end_year
+    train_path_struct: str = '/ML_Input/episodes/data-{}_{}_{}.parquet'        # pollutant, start_year, end_year
     validation_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/validation_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
     prediction_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/prediction_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
     output_parquet_path_struct:str = '/ML_Output/{}_{}-{}_{}_maps_TEST.parquet'                                     # pollutant, predval_start_year, predval_end_year, date_of_input
@@ -285,7 +285,21 @@ class MLModelsConfig:
       # Select our OPTIMIZED parameters for XGBoost
       if self.type_of_params == 'optimized':                                    # MODIFY ONLY IF YOU FOUND BETTER PARAMETERS
         params = {'no2': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 0.3, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.7},
-                  'pm10': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 5, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.8},
+                  'pm10':  
+                  # {'colsample_bytree': 0.7983290925637897, 'gamma': 10.472108273491468, 'learning_rate': 0.7, 'max_depth': 15, 'min_child_weight': 8.087421853237247, 
+                  # 'n_estimators': 500, 'reg_alpha': 0.38657354938403593, 'reg_lambda': 0.005791056895022738, 'subsample': 0.8780644051917939},  # 10min 7.191
+
+
+{'colsample_bytree': 0.7701064134085683, 'gamma': 0.01259122781358169, 'learning_rate': 0.1757220849309905, 'max_depth': 15, 'min_child_weight': 14.928893282057105, 'n_estimators': 800, 'random_state': 34, 'reg_alpha': 9.153040177931164, 'reg_lambda': 6.513040856348863e-05, 'subsample': 0.7463926579343223}, #7.035 15.55min
+
+
+
+                  # {'colsample_bytree': 0.9318971993785014, 'gamma': 0.3071487128480468, 'learning_rate': 0.0408585820154541, 'max_depth': 13, 'min_child_weight': 1.8332408040578865, 'n_estimators': 900, 'random_state': 34, 'reg_alpha': 0.0016212353619178457, 'reg_lambda': 4.6342048116723054e-05, 'subsample': 0.8742463117721134}, # 17min 7.13
+                  # {'colsample_bytree': 0.7983290925637897, 'gamma': 10.472108273491468, 'learning_rate': 0.06377054529622041, 'max_depth': 15, 'min_child_weight': 8.087421853237247, 'n_estimators': 500, 'reg_alpha': 0.38657354938403593, 'reg_lambda': 0.005791056895022738, 'subsample': 0.8780644051917939},  # 10min 7.191
+
+                  # {'colsample_bytree': 0.7, 'learning_rate': 0.2, 'max_depth': 15, 'min_child_weight': 7, 'n_estimators': 700, 'nthread': 4, 'subsample': 0.7}, #11.24 4min40
+                  # {'colsample_bytree': 0.585109623172637, 'gamma': 3.534198884899414, 'max_depth': 17, 'min_child_weight': 4, 'reg_alpha': 141, 'reg_lambda': 0.3443341992566067},
+
                   'pm25':{'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.2, 'reg_lambda': 5, 'subsample': 0.7},
                   'o3_somo10': {'learning_rate': 0.05, 'max_depth': 4, 'gamma': 3, 'reg_alpha': 0.2, 'reg_lambda': 7, 'subsample': 0.7},
                   'o3_somo35': {'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.8}}
@@ -314,4 +328,15 @@ class MLModelsConfig:
     model_to_train = self.model.set_params(**ml_params)
     
     return model_to_train, ml_params
+
+
+  def mq_thresholds(self):
+    thresholds = {
+      'no2':{'urv95r': 0.24, 'rv': 200, 'alfa': 0.20, 'np': 5.20, 'nnp':5.20},
+      'pm10':{'urv95r': 0.28, 'rv': 50, 'alfa': 0.13, 'np': 30, 'nnp':0.25},
+      'pm25':{'urv95r': 0.36, 'rv': 25, 'alfa': 0.30, 'np': 30, 'nnp':0.25},
+      'o3':{'urv95r': 0.18, 'rv': 120, 'alfa': 0.79, 'np': 11, 'nnp':3},
+    }
+
+    return thresholds[self.pollutant]
   

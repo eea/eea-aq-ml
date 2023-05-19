@@ -202,10 +202,10 @@ class MLDataHandler(DataHandler):
     """Builds path where we are storing our datafile by following the structure determined at init
     """
     if train_start_year:
-      train_path:str = self.train_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, target, self.data_handler.pollutant, train_start_year, train_end_year)
-      validation_path:str = self.validation_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
+      train_path:str = self.train_path_struct.format(self.data_handler.pollutant, train_start_year, train_end_year)
+      # validation_path:str = self.validation_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
 
-      return train_path, validation_path
+      return train_path#, validation_path
     
     else:
       prediction_path:str = self.prediction_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
@@ -335,7 +335,7 @@ class MLWorker(MLModelsConfig):
     df_y = df[label]
 
     # Splitting the dataframe
-    X_train, X_test, Y_train, Y_test = model_selection.train_test_split(df_x, df_y, train_size=train_size, random_state=42)                        
+    X_train, X_test, Y_train, Y_test = model_selection.train_test_split(df_x, df_y, train_size=train_size, random_state=34)                        
   
     return X_train, X_test, Y_train, Y_test
   
@@ -365,8 +365,35 @@ class MLWorker(MLModelsConfig):
 
     return ml_model
     
-  @staticmethod   
-  def evaluate_model(ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame, bins:int=40):
+  def mqi_calculator(self, y_test_data, predictions):
+    """
+    Calculates the Model Quality Index (MQI) using the input test data and predictions.
+
+    Parameters:
+    -----------
+    y_test_data : pd.DataFrame
+        The test data for the model.
+    predictions : array-like
+        The predictions made by the model.
+
+    Returns:
+    --------
+    mqi : array-like
+        The calculated MQI for the input test data and predictions.
+    """
+
+    thresholds = self.ml_models_config.mq_thresholds()
+    y_test_rav = y_test_data.to_numpy().ravel()
+    uncertainty = thresholds['urv95r']*np.sqrt(((1-np.square(thresholds['alfa']))*np.square(y_test_rav)/thresholds['np'])+(np.square(thresholds['alfa'])*np.square(thresholds['rv'])/thresholds['nnp']))
+    divid = abs(y_test_rav-predictions)
+    
+    mqi = divid/(2*uncertainty)
+
+    return mqi
+
+
+  # @staticmethod   
+  def evaluate_model(self, ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame, bins:int=40):
     """Metrics and charts to evaluate performance of the ML model
     Params
     ------
@@ -384,8 +411,12 @@ class MLWorker(MLModelsConfig):
       """
 
     # Get scores for model predictions
+    Y_mean = y_test_data.mean()
     rmse = np.sqrt(mean_squared_error(y_test_data, predictions))
     mape = mean_absolute_percentage_error(y_test_data, predictions)
+    corr = np.corrcoef(y_test_data.to_numpy(), predictions, rowvar=False)
+    mqi = self.mqi_calculator(y_test_data, predictions)
+
     try:
       # Finding pollutant and target names in the y_test dataset columns
       label = [col.split('_') for col in y_test_data.columns][0]
@@ -394,8 +425,11 @@ class MLWorker(MLModelsConfig):
     except:
       print('Pollutant and target names could not be found')
 
-    print(f"\n{pollutant}-{target} RMSE : {round(rmse, 3)}\n")
-    print(f"\n{pollutant}-{target} MAPE : {round(mape, 3)}%\n")
+    print(f"\ntarget mean : {round(Y_mean, 3)}")
+    print(f" RMSE : {round(rmse, 3)}")
+    print(f" MAPE : {round(mape, 3)}%")
+    print(f" Correlation : {corr[0,1]}")
+    print(f" MQI 90 percentile : {np.percentile(mqi, 90)}\n")
 
     results = pd.concat([y_test_data.reset_index(drop=True), pd.DataFrame(predictions)], axis=1)
     results.columns = ['actual', 'forecasted']
