@@ -8,7 +8,7 @@ RUN pip3 install --upgrade pip
 # RUN sudo pip3 install setuptools
 ARG SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True
 RUN python3 -m pip install python-dateutil tensorflow nbformat scipy matplotlib 'h5py<3.0.0' graphviz pydot-ng opencv-python keras plotly sklearn csv-to-json azure-storage-blob azure-storage-file-share azure-storage-file-datalake azure-batch ciso8601 joblib silence_tensorflow fancyimpute pytz boto3 pyarrow
-RUN python3 -m pip install pandas==1.5.2
+RUN python3 -m pip install pandas==1.4.4
 # Opcional para parsear rasters
 RUN apt-get install -y gdal-bin python3-gdal libeccodes-dev libgdal-dev
 
