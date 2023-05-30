@@ -39,22 +39,22 @@ class DataHandlerConfig:
     
     return storage_account_name, blob_container_name, sas_key
   
-  @staticmethod
-  def select_preprocess_paths():
-    """Paths at our container storing our desired data for data preprocessing
-    """
-    input_data_path_struct:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}.tiff'                                     # pollutant, year, month, pollutant, year, month, day
-    output_data_path_struct:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}_TEST.csv'                                     # pollutant, year, month, pollutant, year, month, day
-#     input_data_path_struct:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}_TEST3.tiff'                                     # pollutant, year, month, pollutant, year, month, day
+#   @staticmethod
+#   def select_preprocess_paths():
+#     """Paths at our container storing our desired data for data preprocessing
+#     """
+#     input_data_path_struct:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}.tiff'                                     # pollutant, year, month, pollutant, year, month, day
+#     output_data_path_struct:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}_TEST.csv'                                     # pollutant, year, month, pollutant, year, month, day
+# #     input_data_path_struct:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}_TEST3.tiff'                                     # pollutant, year, month, pollutant, year, month, day
     
-    return input_data_path_struct, output_data_path_struct
+#     return input_data_path_struct, output_data_path_struct
 
   @staticmethod
   def select_ml_paths(path_to_return:str=None):
     """Paths at our container storing our desired data for ML purposes
     """
 
-    train_path_struct: str = '/ML_Input/episodes/data-{}_{}_{}.parquet'        # pollutant, start_year, end_year
+    train_path_struct: str = '/ML_Input/episodes/data-{}_{}_{}-all_episodes.parquet'        # pollutant, start_year, end_year
     validation_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/validation_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
     prediction_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/prediction_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
     output_parquet_path_struct:str = '/ML_Output/{}_{}-{}_{}_maps_TEST.parquet'                                     # pollutant, predval_start_year, predval_end_year, date_of_input
@@ -255,7 +255,18 @@ class DataHandlerConfig:
     if pollutant_to_return:
       return eval(pollutant_to_return.lower())
       
-    return no2, pm10, pm25, o3_somo10, o3_somo25
+      
+  @staticmethod
+  def validate_pollutant_values(pollutant):
+
+    max_values = {
+      'no2': 1000,
+      'pm10': 1200,
+      'pm25': 800,
+      'o3': 800,
+    }
+
+    return max_values[pollutant.lower()]
                         
 
 # COMMAND ----------
@@ -285,32 +296,24 @@ class MLModelsConfig:
       # Select our OPTIMIZED parameters for XGBoost
       if self.type_of_params == 'optimized':                                    # MODIFY ONLY IF YOU FOUND BETTER PARAMETERS
         params = {'no2': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 0.3, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.7},
-                  'pm10':  
-                  # {'colsample_bytree': 0.7983290925637897, 'gamma': 10.472108273491468, 'learning_rate': 0.7, 'max_depth': 15, 'min_child_weight': 8.087421853237247, 
-                  # 'n_estimators': 500, 'reg_alpha': 0.38657354938403593, 'reg_lambda': 0.005791056895022738, 'subsample': 0.8780644051917939},  # 10min 7.191
-
-
-{'colsample_bytree': 0.7701064134085683, 'gamma': 0.01259122781358169, 'learning_rate': 0.1757220849309905, 'max_depth': 15, 'min_child_weight': 14.928893282057105, 'n_estimators': 800, 'random_state': 34, 'reg_alpha': 9.153040177931164, 'reg_lambda': 6.513040856348863e-05, 'subsample': 0.7463926579343223}, #7.035 15.55min
-
-
-
-                  # {'colsample_bytree': 0.9318971993785014, 'gamma': 0.3071487128480468, 'learning_rate': 0.0408585820154541, 'max_depth': 13, 'min_child_weight': 1.8332408040578865, 'n_estimators': 900, 'random_state': 34, 'reg_alpha': 0.0016212353619178457, 'reg_lambda': 4.6342048116723054e-05, 'subsample': 0.8742463117721134}, # 17min 7.13
-                  # {'colsample_bytree': 0.7983290925637897, 'gamma': 10.472108273491468, 'learning_rate': 0.06377054529622041, 'max_depth': 15, 'min_child_weight': 8.087421853237247, 'n_estimators': 500, 'reg_alpha': 0.38657354938403593, 'reg_lambda': 0.005791056895022738, 'subsample': 0.8780644051917939},  # 10min 7.191
-
-                  # {'colsample_bytree': 0.7, 'learning_rate': 0.2, 'max_depth': 15, 'min_child_weight': 7, 'n_estimators': 700, 'nthread': 4, 'subsample': 0.7}, #11.24 4min40
-                  # {'colsample_bytree': 0.585109623172637, 'gamma': 3.534198884899414, 'max_depth': 17, 'min_child_weight': 4, 'reg_alpha': 141, 'reg_lambda': 0.3443341992566067},
-
+                  'pm10':  {'colsample_bytree': 0.8194213556024217, 'gamma': 11.921650137104859, 'learning_rate': 0.24859242754464722, 'max_depth': 12, 'min_child_weight': 51.55354953185203, 'n_estimators': 1600, 'random_state': 34, 'reg_alpha': 80.35878394472556, 'reg_lambda': 24.659701744476212, 'subsample': 0.78511802332347},
                   'pm25':{'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.2, 'reg_lambda': 5, 'subsample': 0.7},
                   'o3_somo10': {'learning_rate': 0.05, 'max_depth': 4, 'gamma': 3, 'reg_alpha': 0.2, 'reg_lambda': 7, 'subsample': 0.7},
                   'o3_somo35': {'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.8}}
         
       # Select our TESTING parameters for XGBoost
       if self.type_of_params == 'test':                                         # MODIFY HERE TO TEST NEW PARAMETERS COMBINATIONS
-        params = {'no2': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
-                  'pm10': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
-                  'pm25': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
-                  'o3_somo_10': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
-                  'o3_somo_35': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1}}
+        params = {
+        
+        'no2': {'colsample_bytree': 0.9191129357795635, 'gamma': 169.7947857595013, 'learning_rate': 0.0194839514250874, 'max_depth': 20, 'min_child_weight': 111.21556358941127, 'n_estimators': 1200, 'reg_alpha': 1.075686299090691, 'reg_lambda': 60.061260322547376, 'subsample': 0.8994717169909148},
+          # {'colsample_bytree': 0.9236337335422324, 'gamma': 86.75073133684309,'learning_rate': 0.0170875888527856,'max_depth': 20,'min_child_weight': 90.67186267878384,'n_estimators': 1200,'reg_alpha': 0.6811811821856812,'reg_lambda': 24.205850982781875,'subsample': 0.749840459197933}, #  RMSE : 11.751 corr: 0.76
+            
+            # {'colsample_bytree': 0.7478329665318217, 'gamma': 12.529795965543993, 'learning_rate': 0.0947727234436404, 'max_depth': 18, 'min_child_weight': 4.049627400216884, 'n_estimators': 900, 'reg_alpha': 0.7812003855219977, 'reg_lambda': 0.7935961566653076, 'subsample': 0.9820689712305682}, 
+          'pm10': {'colsample_bytree': 0.640661248372002, 'gamma': 3.3225412207697786, 'learning_rate': 0.04880164831457527, 'max_depth': 18, 'min_child_weight': 44.14849644350974, 'n_estimators': 800, 'random_state': 34, 'reg_alpha': 5.772821839486555, 'reg_lambda': 14066.872321270297, 'subsample': 0.4039445671863813}, #  RMSE : 24.335 corr: 0.63,
+          'pm25': {'colsample_bytree': 0.6807219214496826, 'gamma': 7.327517165412715, 'learning_rate': 0.013499690373782793, 'max_depth': 14, 'min_child_weight': 9.048684175255634, 'n_estimators': 1200, 'random_state': 34, 'reg_alpha': 0.44345862493575816, 'reg_lambda': 21.29546152013203, 'subsample': 0.651234245125773}, # RMSE: 9.49 corr:0.78
+          'o3': {'colsample_bytree': 0.4164639157027386, 'gamma': 2.5744247273428362, 'learning_rate': 0.04387990470807894, 'max_depth': 16, 'min_child_weight': 0.37914611416124433, 'n_estimators': 1600, 'random_state': 34, 'reg_alpha': 2.3107143505857826, 'reg_lambda': 0.6849732843086682, 'subsample': 0.9718978418952275}, #  RMSE : 11.545 corr: 0.77
+          'o3_somo_10': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
+          'o3_somo_35': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1}}
 
         
     # In case we did not configure a matching ML model
@@ -332,11 +335,11 @@ class MLModelsConfig:
 
   def mq_thresholds(self):
     thresholds = {
-      'no2':{'urv95r': 0.24, 'rv': 200, 'alfa': 0.20, 'np': 5.20, 'nnp':5.20},
-      'pm10':{'urv95r': 0.28, 'rv': 50, 'alfa': 0.13, 'np': 30, 'nnp':0.25},
-      'pm25':{'urv95r': 0.36, 'rv': 25, 'alfa': 0.30, 'np': 30, 'nnp':0.25},
-      'o3':{'urv95r': 0.18, 'rv': 120, 'alfa': 0.79, 'np': 11, 'nnp':3},
+      'no2':{'beta':2, 'urv95r': 0.24, 'rv': 200, 'alfa': 0.2, 'np': 5.2, 'nnp':5.5},
+      'pm10':{'beta':2, 'urv95r': 0.28, 'rv': 50, 'alfa': 0.25, 'np': 20, 'nnp':1.5},
+      'pm25':{'beta':2, 'urv95r': 0.36, 'rv': 25, 'alfa': 0.5, 'np': 20, 'nnp':1.5},
+      'o3':{'beta':2, 'urv95r': 0.18, 'rv': 120, 'alfa': 0.79, 'np': 11, 'nnp':3},
     }
-
+    
     return thresholds[self.pollutant]
   

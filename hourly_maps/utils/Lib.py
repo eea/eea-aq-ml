@@ -311,7 +311,7 @@ class MLWorker(MLModelsConfig):
 
   def __init__(self, pollutant, type_of_params:str=None):
     self.ml_models_config = MLModelsConfig(pollutant, type_of_params)
-    if type_of_params!= None: self.model_to_train, self.ml_params = self.ml_models_config.prepare_model()
+    if type_of_params != None: self.model_to_train, self.ml_params = self.ml_models_config.prepare_model()
 
   @staticmethod
   def split_data(df: pd.DataFrame, train_size:float=0.7, label:list=None):
@@ -367,7 +367,7 @@ class MLWorker(MLModelsConfig):
     
   def mqi_calculator(self, y_test_data, predictions):
     """
-    Calculates the Model Quality Index (MQI) using the input test data and predictions.
+    Calculates the HOURLY Model Quality Index (MQI) using the input test data and predictions.
 
     Parameters:
     -----------
@@ -384,10 +384,13 @@ class MLWorker(MLModelsConfig):
 
     thresholds = self.ml_models_config.mq_thresholds()
     y_test_rav = y_test_data.to_numpy().ravel()
-    uncertainty = thresholds['urv95r']*np.sqrt(((1-np.square(thresholds['alfa']))*np.square(y_test_rav)/thresholds['np'])+(np.square(thresholds['alfa'])*np.square(thresholds['rv'])/thresholds['nnp']))
-    divid = abs(y_test_rav-predictions)
-    
-    mqi = divid/(2*uncertainty)
+
+    uncertainty = thresholds['urv95r']*np.sqrt((1-np.square(thresholds['alfa']))
+                                              *(np.square(np.mean(y_test_rav)) + np.square(np.std(y_test_rav)))
+                                              +np.square(thresholds['alfa'])*np.square(thresholds['rv']))
+
+    rmse = np.sqrt(mean_squared_error(y_test_data, predictions))
+    mqi = rmse/(thresholds['beta']*uncertainty)
 
     return mqi
 
@@ -434,9 +437,9 @@ class MLWorker(MLModelsConfig):
     results = pd.concat([y_test_data.reset_index(drop=True), pd.DataFrame(predictions)], axis=1)
     results.columns = ['actual', 'forecasted']
 
-    # Plotting lines for actuals vs forecasts data
-    fig = px.line(results)
-    fig.show()
+    # # Plotting lines for actuals vs forecasts data
+    # fig = px.line(results)
+    # fig.show()
     
     # Plot histogram showing errors in predictions
     diff_results = results.actual - results.forecasted

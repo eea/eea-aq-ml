@@ -217,43 +217,16 @@ for pollutant in pollutants:
 
 
     # Preparing data for training/validating/predicting
-    df_train = pollutant_train_data.drop('GridNum1km', 'Year','AreaHa', 'level3_code', 'adm_country', 'date', 'datetime_end', 'datetime_begin').toPandas()   
-    if add_cities: df_train['country_encoded'] = df_train['country_encoded'].astype(int)
+    df_train = pollutant_train_data.drop('GridNum1km', 'Year','AreaHa', 'level3_code', 'adm_country', 'date', 'datetime_end', 'datetime_begin')#.toPandas()   
+    # if add_cities: df_train['country_encoded'] = df_train['country_encoded'].astype(int)
                                        
-    df_validation = pollutant_validation_data.drop('GridNum1km', 'Year','AreaHa', 'level3_code', 'adm_country', 'date', 'datetime_end', 'datetime_begin').toPandas()    
-    if add_cities: df_validation['country_encoded'] = df_validation['country_encoded'].astype(int)
+    df_validation = pollutant_validation_data.drop('GridNum1km', 'Year','AreaHa', 'level3_code', 'adm_country', 'date', 'datetime_end', 'datetime_begin')#.toPandas()    
+    # if add_cities: df_validation['country_encoded'] = df_validation['country_encoded'].astype(int)
                                      
-    X_train , Y_train = df_train[[col for col in df_train.columns if col not in label]], df_train[[label]] 
-    X_test, Y_test = df_validation[[col for col in df_validation.columns if col not in label]], df_validation[[label]]
-
-    # # Executing selected ML model
-    # model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}",
-    #                           'model_to_train' : ml_worker.model_to_train} 
+    X_train , Y_train = df_train.select([col for col in df_train.columns if col not in label]), df_train.select([label])
+    X_test, Y_test = df_validation.select([col for col in df_validation.columns if col not in label]), df_validation.select([label])
 
 
-    # pollutant_train_data[pollutant] = pollutant_train_data[pollutant].ffill()
-    # pollutant_validation_data[pollutant] = pollutant_validation_data[pollutant].ffill()
-    # pollutant_train_data = pollutant_train_data.drop_duplicates(subset=['Gridnum1km','date', 'hour', f'CAMS_{pollutant}', pollutant], keep='first')
-
-    
-    # # display(pollutant_train_data)
-    # X_train, X_test, Y_train, Y_test = ml_worker.split_data(df=pollutant_train_data, train_size=0.7, label=pollutant)
-
-    # # pollutant_train_data, pollutant_validation_data = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year, features)
-    # # pollutant_train_data = pollutant_train_data.filter((pollutant_train_data['Year'] >= train_start_year) & (pollutant_train_data['Year'] <= train_end_year) & (pollutant_train_data[label] > 0))
-    # # pollutant_validation_data = pollutant_validation_data.filter((pollutant_validation_data['Year'] >= predval_start_year) & (pollutant_validation_data['Year'] <= predval_end_year) & (pollutant_validation_data[label] > 0))
-    # logging.info('Data pollutant collected! Checking for duplicated data among your training and validation datasets...')
-
-    # # # Making sure we do not have duplicates among training and validation datasets
-    # trainset_df = pd.concat([X_train, Y_train], axis=1)
-    # testset_df = pd.concat([validation_X, validation_Y], axis=1)
-    # duplicated_rows = data_handler.find_duplicates(df1=spark.createDataFrame(trainset_df), df2=spark.createDataFrame(testset_df), cols_to_compare=['Gridnum1km','date', 'hour', f'CAMS_{pollutant}', pollutant])
-    # # duplicated_rows = data_handler.find_duplicates(df1=spark.createDataFrame(X_train), df2=spark.createDataFrame(X_test), cols_to_compare=['GridNum1km','date', 'hour'])
-    # logging.warning(f'¡¡¡ WARNING !!! There are duplicates in your training and validation set: {duplicated_rows.count()}') if not duplicated_rows.rdd.isEmpty() else logging.info(f'There are no duplicates!')
-
-    # # # Preparing data for training/validating/predicting
-    # X_train = X_train[[col for col in X_train.columns if col not in ['Gridnum1km', 'AreaHa', 'datetime_begin', 'datetime_end', 'resulttime', 'eucode', 'ns', 'polu', 'sta', 'Lat', 'Lon', 'AirQualityStationEoICode', 'date', 'level3_code', 'adm_country', '__index_level_0__']]]           # categorical features                             
-    # X_test = X_test[[col for col in X_test.columns if col not in ['Gridnum1km', 'AreaHa', 'datetime_begin', 'datetime_end', 'resulttime', 'eucode', 'ns', 'polu', 'sta', 'Lat', 'Lon', 'AirQualityStationEoICode', 'date', 'level3_code', 'adm_country', '__index_level_0__']]]                 # categorical features 
 
 # COMMAND ----------
 
@@ -341,31 +314,34 @@ warnings.filterwarnings("ignore")
 
 # COMMAND ----------
 
-def XGB_hyperparameter_tuning(space):
-    print(space)
-    model = XGBRegressor()
-    model.set_params(**space)
-    evaluation = [( X_train, Y_train), ( X_test, Y_test)]
-    
-    model.fit(X_train, Y_train,
-            eval_set=evaluation, eval_metric="rmse",
-            early_stopping_rounds=10, verbose=False)
+!pip install sparkxgb
 
-    pred = model.predict(X_test)
-    rmse= np.sqrt(mean_squared_error(Y_test, pred))
-    print ("RMSE SCORE:", rmse)
+# COMMAND ----------
 
-    return {'loss':rmse, 'status': STATUS_OK, 'model': model}
-  
+from pyspark.ml import Pipeline
+from pyspark.ml.evaluation import RegressionEvaluator
+from sparkxgb import XGBoostRegressor
 
-trials = Trials()
-best = fmin(fn=XGB_hyperparameter_tuning,
-            space=space,
-            algo=tpe.suggest,
-            max_evals=200,
-            trials=trials)
+def XGB_hyperparameter_tuning(params):
+    model = XGBoostRegressor()
+    model.setParams(**params)
 
-print (best)
+    pipeline = Pipeline(stages=[model])
+
+    model = pipeline.fit(train_data)
+    predictions = model.transform(test_data)
+
+    evaluator = RegressionEvaluator(metricName="rmse")
+    rmse = evaluator.evaluate(predictions)
+    print("RMSE SCORE:", rmse)
+
+    return {'loss': rmse, 'status': 'ok', 'model': model}
+
+# # Assuming you have your SparkSession as 'spark'
+# train_data = spark.read.format("libsvm").load("train_data.libsvm")
+# test_data = spark.read.format("libsvm").load("test_data.libsvm")
+
+best_params = XGB_hyperparameter_tuning(space)
 
 # COMMAND ----------
 
@@ -385,13 +361,13 @@ for result in trials.trials:
   scores_df = pd.concat([scores_df, pd.concat([params, loss], axis=1)])
 
 try:
-  existing_params = pd.read_csv('/dbfs'+data_handler.file_system_path + f'/ML_Input/episodes/hyper_params-{pollutant}_trainEnd{train_end_year}_traistart{train_start_year}_trainset{trainset}.csv')
+  existing_params = pd.read_csv('/dbfs'+data_handler.file_system_path + f'/ML_Input/episodes/ANNUAL_hyper_params-{pollutant}_trainEnd{train_end_year}_traistart{train_start_year}_trainset{trainset}.csv')
   new_params = pd.concat([existing_params, scores_df])
-  new_params.to_csv('/dbfs'+data_handler.file_system_path + f'/ML_Input/episodes/hyper_params-{pollutant}_trainEnd{train_end_year}_traistart{train_start_year}_trainset{trainset}.csv', index=False) 
+  new_params.to_csv('/dbfs'+data_handler.file_system_path + f'/ML_Input/episodes/ANNUAL_hyper_params-{pollutant}_trainEnd{train_end_year}_traistart{train_start_year}_trainset{trainset}.csv', index=False) 
 
 except FileNotFoundError:
-  scores_df.to_csv('/dbfs'+data_handler.file_system_path + f'/ML_Input/episodes/hyper_params-{pollutant}_trainEnd{train_end_year}_traistart{train_start_year}_trainset{trainset}.csv', index=False) 
-  existing_params = new_params
+  scores_df.to_csv('/dbfs'+data_handler.file_system_path + f'/ML_Input/episodes/ANNUAL_hyper_params-{pollutant}_trainEnd{train_end_year}_traistart{train_start_year}_trainset{trainset}.csv', index=False) 
+
 
 from sklearn.linear_model import LinearRegression
 from matplotlib import pyplot
@@ -414,9 +390,9 @@ importance.set_index('Features').plot(kind='bar', legend=False, title='Params fe
 
 # COMMAND ----------
 
-# pollutant='PM25'
+# pollutant='PM10'
 data_handler = DataHandler(pollutant)
-existing_params = pd.read_csv('/dbfs'+data_handler.file_system_path + f'/ML_Input/episodes/hyper_params-{pollutant}_trainEnd{train_end_year}_traistart{train_start_year}_trainset{trainset}.csv').drop_duplicates()
+existing_params = pd.read_csv('/dbfs'+data_handler.file_system_path + f'/ML_Input/episodes/ANNUAL_hyper_params-{pollutant}_trainEnd{train_end_year}_traistart{train_start_year}_trainset{trainset}.csv').drop_duplicates()
 display(existing_params)
 
 # COMMAND ----------
@@ -442,8 +418,7 @@ importance.set_index('Features').plot(kind='bar', legend=False, title='Params fe
 
 # COMMAND ----------
 
-existing_params[['n_estimators','max_depth']] = existing_params[['n_estimators','max_depth']].astype(int)
-existing_params.sort_values('rmse').reset_index(drop=True).to_dict(orient='records')
+
 
 # COMMAND ----------
 
@@ -604,6 +579,77 @@ importance = pd.concat([importance, features], axis=1)
 
 
 importance.set_index('Features').plot(kind='bar', legend=False, title='Params feature importance', figsize=(15,10));
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+# MAGIC # MQI calc
+
+# COMMAND ----------
+
+display(pollutant_train_data)
+
+# COMMAND ----------
+
+sample_train = pollutant_train_data.limit(1000)
+
+# COMMAND ----------
+
+    
+  def mqi_calculator(self, y_test_data, predictions):
+    """
+    Calculates the Model Quality Index (MQI) using the input test data and predictions.
+
+    Parameters:
+    -----------
+    y_test_data : pd.DataFrame
+        The test data for the model.
+    predictions : array-like
+        The predictions made by the model.
+
+    Returns:
+    --------
+    mqi : array-like
+        The calculated MQI for the input test data and predictions.
+    """
+
+    thresholds = self.ml_models_config.mq_thresholds()
+    y_test_rav = y_test_data.to_numpy().ravel()
+
+    uncertainty = thresholds['urv95r']*np.sqrt(
+                                              (1-np.square(thresholds['alfa']))
+                                              *(np.square(np.mean(y_test_rav)) + np.square(np.std(y_test_rav)))
+                                              +np.square(thresholds['alfa'])*np.square(thresholds['rv']))
+
+    rmse = np.sqrt(mean_squared_error(y_test_data, predictions))
+    mqi = rmse/(thresholds['beta']*uncertainity)
+
+    return mqi
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 
