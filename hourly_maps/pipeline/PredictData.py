@@ -38,24 +38,26 @@ Author   : aiborra-ext@tracasa.es
 """
 
 # Set default parameters for input widgets
-DEFAULT_TRAIN_START = '2016'
-DEFAULT_TRAIN_END = '2019'
-DEFAULT_PREDVAL_START = '2020'
-DEFAULT_PREDVAL_END = '2020'
-DEFAULT_VERSION = 'v0'
-DEFAULT_DATE_OF_INPUT = '20230201'
+# DEFAULT_TRAIN_START = '2023/05/22'
+# DEFAULT_TRAIN_END = '2023/05/28'
+DEFAULT_PREDVAL_START = '2023-05-22'
+DEFAULT_PREDVAL_END =  '2023-05-28'
+# DEFAULT_VERSION = 'v0'
+# DEFAULT_DATE_OF_INPUT = '20230201'
+DEFAULT_FEATURES_LIST = ['*', 'selected']
 
 DEFAULT_POLLUTANTS_LIST = ['PM10', 'PM25', 'O3', 'O3_SOMO10', 'O3_SOMO35', 'NO2']
 DEFAULT_TRAINSET_LIST = [ 'eRep', 'e1b']
 DEFAULT_STORE_PREDICTIONS_LIST = ['YES', 'NO']
 
 # Set widgets for notebook
-dbutils.widgets.text(name='TrainStartDate', defaultValue=str(DEFAULT_TRAIN_START), label='Train Start Year')                       # We need this to load the pretrained model
-dbutils.widgets.text(name='TrainEndDate', defaultValue=str(DEFAULT_TRAIN_END), label='Train End Year')                             # We need this to load the pretrained model
+# dbutils.widgets.text(name='TrainStartDate', defaultValue=str(DEFAULT_TRAIN_START), label='Train Start Year')                       # We need this to load the pretrained model
+# dbutils.widgets.text(name='TrainEndDate', defaultValue=str(DEFAULT_TRAIN_END), label='Train End Year')                             # We need this to load the pretrained model
 dbutils.widgets.text(name='PredValStartDate', defaultValue=str(DEFAULT_PREDVAL_START), label='Pred-Val Start Year')
 dbutils.widgets.text(name='PredValEndDate', defaultValue=str(DEFAULT_PREDVAL_END), label='Pred-Val End Year')
-dbutils.widgets.text(name='Version', defaultValue=str(DEFAULT_VERSION), label='Version')
-dbutils.widgets.text(name='DateOfInput', defaultValue=str(DEFAULT_DATE_OF_INPUT), label='Date of Input')                            # ? Check the db every time to get the dateofinput?  # Idea generate a droprdown widget + listdir from db
+# dbutils.widgets.text(name='Version', defaultValue=str(DEFAULT_VERSION), label='Version')
+# dbutils.widgets.text(name='DateOfInput', defaultValue=str(DEFAULT_DATE_OF_INPUT), label='Date of Input')                            # ? Check the db every time to get the dateofinput?  # Idea generate a droprdown widget + listdir from db
+dbutils.widgets.dropdown('Features', 'selected', DEFAULT_FEATURES_LIST, label='Features')  
 
 dbutils.widgets.multiselect('Pollutants', 'PM10', DEFAULT_POLLUTANTS_LIST, label='Pollutants')
 dbutils.widgets.multiselect('Trainset', "eRep", DEFAULT_TRAINSET_LIST, label='Trainset')                          
@@ -85,6 +87,7 @@ import pyspark.sql.functions as F
 from pyspark.sql.types import LongType
 from osgeo import gdal
 from osgeo import osr
+from pyspark.sql.functions import dayofweek
 
 gdal.UseExceptions()
 gdal.SetConfigOption('GDAL_DISABLE_READDIR_ON_OPEN', 'TRUE')
@@ -116,21 +119,23 @@ logging.getLogger("py4j").setLevel(logging.ERROR)
 
 
 # Adding input variables from widgets
-train_start_year:str = dbutils.widgets.get('TrainStartDate')
-train_end_year:str = dbutils.widgets.get('TrainEndDate')
-predval_start_year:str = dbutils.widgets.get('PredValStartDate')
-predval_end_year:str = dbutils.widgets.get('PredValEndDate')
+# train_start_year:str = dbutils.widgets.get('TrainStartDate')
+# train_end_year:str = dbutils.widgets.get('TrainEndDate')
+predval_start_date:str = dbutils.widgets.get('PredValStartDate')
+predval_end_date:str = dbutils.widgets.get('PredValEndDate')
 pollutants:list = dbutils.widgets.get('Pollutants').split(',')
 trainset:list = dbutils.widgets.get('Trainset').split(',')
-date_of_input:str = dbutils.widgets.get('DateOfInput')
-version:str = dbutils.widgets.get('Version')
+# date_of_input:str = dbutils.widgets.get('DateOfInput')
+# version:str = dbutils.widgets.get('Version')
 store_predictions:bool = True if dbutils.widgets.get('StorePredictions') == 'YES' else False
 
+features:list = dbutils.widgets.get('Features') if isinstance(dbutils.widgets.get('Features'), list) else [dbutils.widgets.get('Features')]
 
-logging.info(f'Your chosen parameters to PREDICT: train_start_year: "{train_start_year}", train_end_year: "{train_end_year}",  predval_start_year: "{predval_start_year}", predval_end_year: "{predval_end_year}", pollutants: {pollutants}, trainset: {trainset}, date_of_input: "{date_of_input}", version: "{version}", store_predictions:"{store_predictions}"')
+
+logging.info(f'Your chosen parameters to PREDICT: train_start_year: predval_start_year: "{predval_start_date}", predval_end_year: "{predval_end_date}", pollutants: {pollutants}, trainset: {trainset}, store_predictions:"{store_predictions}"')
 
 if len(trainset)>1: logging.warning(f'You have chosen more than 1 values for Trainset: {trainset}')
-if predval_end_year < predval_start_year: raise Exception('End dates cannot be earlier than starting dates. Double check!') 
+if predval_end_date < predval_start_date: raise Exception('End dates cannot be earlier than starting dates. Double check!') 
 
 
 # COMMAND ----------
@@ -280,65 +285,94 @@ def write_dataset_to_raster(output_raster_path, dataset, attribute, x_attrib='x'
 
 try:
   for pollutant in pollutants:     
-  # In case we have different target variables i.e.: eRep and e1b.
+    # In case we have different target variables i.e.: eRep and e1b.
     for target in trainset:
       logging.info(f'Processing pollutant: {pollutant} target {target}.')
-      label = [target + '_' + pollutant.upper()][0]
+      label = [pollutant.upper()][0]
 
       ml_worker = MLWorker(pollutant)
       ml_data_handler = MLDataHandler(pollutant)
+      data_handler = DataHandler(pollutant)
 
       # Prediction inputs data                                                                   ????? shall we also concatenate preds dataset into the final model training????
-      pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features=['selected'])
-      logging.info('Data pollutant collected!')
-      pollutant_prediction_data_pd = pollutant_prediction_data.toPandas()
-      pollutant_prediction_input_data_pd = pollutant_prediction_data.drop('GridNum1km', 'Year','AreaHa', 'level3_code', 'adm_country').toPandas()
-
-      # Loading pretrained model and executing predictions
-      model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_trained_from_{train_start_year}_to_{train_end_year}_{version}"}
-      trained_model = ml_worker.train_load_ml_model(model_name=model_to_train_details['model_name'], X_train_data=None, Y_train_data=None)
+      # pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features=['selected'])
+      selected_cols_pollutants = data_handler.config.select_cols(data_handler.pollutant) if features[0]=='selected' else ['*'] 
+      # prediction_path_struct:str = '/ML_Input/HOURLY_DATA/data-{}_{}-{}/{}_{}/prediction_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
 
 
-      logging.info(f'Performing predictions with features:\n {pollutant_prediction_input_data_pd.count()}')
-      predictions = trained_model.predict(pollutant_prediction_input_data_pd)
+
+      # pollutant_prediction_data = data_handler.parquet_reader(f'/ML_Input/HOURLY_DATA/data-{pollutant}_{predval_start_date}_{predval_end_date}.parquet', features=selected_cols_pollutants)#.dropna(subset=[pollutant]).drop_duplicates([pollutant, 'Gridnum1km', 'date', 'hour'])    # MODIFICAR PATH PARA INPUT DATA DEL PREDICTION
+      pollutant_prediction_data = data_handler.parquet_reader(f'/ML_Input/HOURLY_DATA/data-{pollutant}_2023-05-22_{predval_end_date}.parquet', features=selected_cols_pollutants)#.dropna(subset=[pollutant]).drop_duplicates([pollutant, 'Gridnum1km', 'date', 'hour'])    # MODIFICAR PATH PARA INPUT DATA DEL PREDICTION
+
+      pollutant_prediction_data = pollutant_prediction_data.select([col for col in pollutant_prediction_data.columns if col not in [pol for pol in DEFAULT_POLLUTANTS_LIST]])
+      pollutant_prediction_data = pollutant_prediction_data.withColumn('weekday', dayofweek('date'))
+
+      dates = (date for date in pd.date_range(predval_start_date, predval_end_date))
+      for dat in dates:
+        print(dat)
+        print( str(dat).split(' ')[0])
+        if str(str(dat).split(' ')[0]) == '2023-05-24':
+          start_hour = 15
+        else:
+          start_hour = 0
+        for hour in range(start_hour,24):
+          pollutant_pred_dated = pollutant_prediction_data.filter((pollutant_prediction_data.date==dat) & (pollutant_prediction_data.hour == hour))
+
+          logging.info('Data pollutant collected for {} date {} hour {}!'.format(pollutant, dat, hour))
+          pollutant_prediction_data_pd = pollutant_pred_dated.toPandas()
+          pollutant_prediction_input_data_pd = pollutant_pred_dated.drop('GridNum1km', 'Year','AreaHa', 'level3_code', 'adm_country', 'datetime_end', 'datetime_begin', 'date').toPandas().rename(columns={f'cams_{pollutant}': f'CAMS_{pollutant}'})
+
+          # Loading pretrained model and executing predictions
+          model_to_train_details = {'model_name': f"{pollutant}_{ml_worker.ml_models_config.model_str.replace('()', '')}_hourly"}
+          trained_model = ml_worker.train_load_ml_model(model_name=model_to_train_details['model_name'], X_train_data=None, Y_train_data=None)
+
+
+          logging.info(f'Performing predictions with features:\n {pollutant_prediction_input_data_pd.count()}')
+          predictions = trained_model.predict(pollutant_prediction_input_data_pd)
+    
+          # Joining predictions with their gridnum and year
+          predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
+          ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'date', 'hour']], predictions_df], axis=1)
+
+          # Dealing with memory issues
+          predictions_df = None
+          pollutant_prediction_data_pd = None
+          pollutant_prediction_input_data_pd = None
+          predictions = None
+
+          if store_predictions:
+            # output_parquet_path_struct:str = f'/ML_Output/HOURLY_OUTPUTS/{pollutant}/{predval_start_date}_{predval_end_date}/{str(dat).split(" ")[0]}/hour_{hour}_maps_HOURLY_TEST'                                   # pollutant, predval_start_year, predval_end_year, date_of_input
+            output_parquet_path_struct:str = f'/ML_Output/HOURLY_OUTPUTS/{pollutant}/2023-05-22_{predval_end_date}/{str(dat).split(" ")[0]}/hour_{hour}_maps_HOURLY_TEST'                                   # pollutant, predval_start_year, predval_end_year, date_of_input
+            # raster_outputs_path_struct:str = f'/ML_Output/HOURLY_OUTPUTS/GeoTiffs/{pollutant}/{predval_start_date}_{predval_end_date}/{str(dat).split(" ")[0]}/hour_{hour}_1km_Europe_EEA_ML_XGB_HOURLY_TEST.tiff'  # predyear, code, agg, predyear, code, agg, ml_models_config.model_str[:2]
+            raster_outputs_path_struct:str = f'/ML_Output/HOURLY_OUTPUTS/GeoTiffs/{pollutant}/2023-05-22_{predval_end_date}/{str(dat).split(" ")[0]}/hour_{hour}_1km_Europe_EEA_ML_XGB_HOURLY_TEST.tiff'  # predyear, code, agg, predyear, code, agg, ml_models_config.model_str[:2]
+
+
+            logging.info('Writing parquet file into {} '.format(output_parquet_path_struct))
+            ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path_struct)
+            df_spark = spark.createDataFrame(ml_outputs)
       
-      # Joining predictions with their gridnum and year
-      predictions_df = pd.DataFrame(predictions, columns=[pollutant.upper()])
-      ml_outputs = pd.concat([pollutant_prediction_data_pd[['GridNum1km', 'Year']], predictions_df], axis=1)
+            # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
+            ml_outputs_df_xy = df_spark \
+                                          .withColumnRenamed('x', 'x_old') \
+                                          .withColumnRenamed('y', 'y_old') \
+                                          .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
+                                          .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
+            ml_outputs = None
+            df_spark = None
 
-      # Dealing with memory issues
-      predictions_df = None
-      pollutant_prediction_data_pd = None
-      pollutant_prediction_input_data_pd = None
-      predictions = None
+            ml_outputs_df_xy = ml_outputs_df_xy.cache()
 
-      if store_predictions:
-        logging.info('Writing parquet file into {} '.format(output_parquet_path))
-        ml_data_handler.data_handler.parquet_storer(ml_outputs, output_parquet_path)
-        df_spark = spark.createDataFrame(ml_outputs)
-        
-        # Adding XY location using 'GridNum1km' attribute (For didactical purpose).
-        ml_outputs_df_xy = df_spark \
-                                      .withColumnRenamed('x', 'x_old') \
-                                      .withColumnRenamed('y', 'y_old') \
-                                      .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
-                                      .withColumn('y', gridid2laea_y_udf('GridNum1km') - F.lit(500))
-        ml_outputs = None
-        df_spark = None
+            # Write to geotiff       
+            logging.info('Writing geotiff file into {} '.format(raster_outputs_path_struct))
+            write_dataset_to_raster(output_raster_path='/dbfs'+ raster_outputs_path_struct, dataset=ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
 
-        ml_outputs_df_xy = ml_outputs_df_xy.cache()
+          ml_outputs_df_xy.unpersist()
 
-        # Write to geotiff       
-        logging.info('Writing geotiff file into {} '.format(raster_output_path))
-        write_dataset_to_raster(output_raster_path='/dbfs'+ raster_output_path, dataset=ml_outputs_df_xy, attribute=pollutant, pixel_size_x=1000.0, pixel_size_y=1000.0)
-
-        ml_outputs_df_xy.unpersist()
-      
-  logging.info(f'Finished predictions!')
+    logging.info(f'Finished predictions!')
 
 except Exception as e:
     message = '{}\n{}'.format(str(e), traceback.format_exc())
-    notebook_mgr.exit(status='ERROR', message=message, options={'TrainStartDate': str(train_start_year), 'TrainEndDate': str(train_end_year), 'PredValStartDate': str(predval_start_year),'PredValEndDate': str(predval_end_year),'Pollutants': str(pollutants),'Trainset': str(trainset),'DateOfInput': str(date_of_input),'Version': str(version),'StorePredictions': str(store_predictions)})
+    notebook_mgr.exit(status='ERROR', message=message, options={ 'PredValStartDate': str(predval_start_date),'PredValEndDate': str(predval_end_date),'Pollutants': str(pollutants),'Trainset': str(trainset), 'StorePredictions': str(store_predictions)})
 
 
 
@@ -348,8 +382,8 @@ except Exception as e:
 # COMMAND ----------
 
 # # Plot predictions
-# df_spark = spark.createDataFrame(ml_outputs)
-# ml_outputs_df_xy = df_spark \
+# # df_spark = spark.createDataFrame(ml_outputs_df_xy)
+# ml_outputs_df_xy = ml_outputs_df_xy \
 #                               .withColumnRenamed('x', 'x_old') \
 #                               .withColumnRenamed('y', 'y_old') \
 #                               .withColumn('x', gridid2laea_x_udf('GridNum1km') + F.lit(500)) \
@@ -372,3 +406,61 @@ notebook_mgr.exit(status='SUCCESS', message='', options={'TrainStartDate': str(t
 
 notebook_mgr = None
 
+
+# COMMAND ----------
+
+  for pollutant in pollutants:     
+  # In case we have different target variables i.e.: eRep and e1b.
+    for target in trainset:
+      logging.info(f'Processing pollutant: {pollutant} target {target}.')
+      label = [pollutant.upper()][0]
+
+      ml_worker = MLWorker(pollutant)
+      ml_data_handler = MLDataHandler(pollutant)
+      data_handler = DataHandler(pollutant)
+      # Prediction inputs data                                                                   ????? shall we also concatenate preds dataset into the final model training????
+      # pollutant_prediction_data, output_parquet_path, raster_output_path = ml_data_handler.data_collector(predval_start_year, predval_end_year, date_of_input, version, target, None, None, features=['selected'])
+      selected_cols_pollutants = data_handler.config.select_cols(data_handler.pollutant) if features[0]=='selected' else ['*'] 
+pollutant_prediction_data_all = data_handler.parquet_reader(f'/ML_Input/HOURLY_DATA/data-{pollutant}_2023-05-22_2023-05-28.parquet', features=selected_cols_pollutants).dropna(subset=[pollutant]).drop_duplicates([pollutant, 'GridNum1km', 'date', 'hour'])    # MODIFICAR PATH PARA INPUT DATA DEL PREDICTION
+
+
+pollutant_predictions = data_handler.parquet_reader(f'/ML_Output/HOURLY_OUTPUTS/{pollutant}_2023-05-22_2023-05-28_maps_HOURLY_TEST', features=selected_cols_pollutants)#.drop_duplicates([pollutant, 'GridNum1km', 'date'])
+pollutant_prediction_data_all = pollutant_prediction_data_all.toPandas()
+pollutant_predictions = pollutant_predictions.toPandas()
+Y_mean = pollutant_prediction_data_all['O3'].mean()
+rmse = np.sqrt(mean_squared_error(pollutant_prediction_data_all['O3'], ml_outputs['O3']))
+mape = mean_absolute_percentage_error(pollutant_prediction_data_all['O3'], ml_outputs['O3'])
+corr = np.corrcoef(pollutant_prediction_data_all['O3'].to_numpy(), ml_outputs['O3'], rowvar=False)
+# mqi = self.mqi_calculator(y_test_data, predictions)
+
+# COMMAND ----------
+
+Y_mean = pollutant_prediction_data_all['O3'].mean()
+rmse = np.sqrt(mean_squared_error(pollutant_prediction_data_all['O3'], ml_outputs['O3']))
+mape = mean_absolute_percentage_error(pollutant_prediction_data_all['O3'], ml_outputs['O3'])
+corr = np.corrcoef(pollutant_prediction_data_all['O3'].to_numpy(), ml_outputs['O3'], rowvar=False)
+# mqi = self.mqi_calculator(y_test_data, predictions)
+
+# COMMAND ----------
+
+print('Ymean:', Y_mean)
+print('rmse:', rmse)
+print('mape:', mape)
+print('corr:', corr[0][1])
+
+# COMMAND ----------
+
+Ymean: 70.82145477777861
+rmse: 28.53018874480328
+mape: 150551956001040.28
+corr: 0.6157424596206004
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+ml_worker = MLWorker(pollutant)
+
+ml_worker.evaluate_model(ml_model=, predictions=, y_test_data=, bins=100)

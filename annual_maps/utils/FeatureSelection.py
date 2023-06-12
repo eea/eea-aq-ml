@@ -51,14 +51,17 @@ dbutils.widgets.dropdown('TypeOfData', 'training', DEFAULT_TYPE_DATA_LIST, label
 
 # MAGIC %md
 # MAGIC # 1. Import required packages & variables
+# MAGIC
 
 # COMMAND ----------
 
 # MAGIC %run "../utils/Lib"
+# MAGIC
 
 # COMMAND ----------
 
 # MAGIC %run "../config/ConfigFile"
+# MAGIC
 
 # COMMAND ----------
 
@@ -110,7 +113,7 @@ if (train_end_year < train_start_year) or (predval_end_year < predval_start_year
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC # 2. Loading, processing and plotting data
 
 # COMMAND ----------
@@ -190,7 +193,7 @@ def plot_corr_vif (corr_vif_features: pd.DataFrame, pollutant:str, target:str = 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC # 3. Execute pipeline 
 
 # COMMAND ----------

@@ -41,25 +41,28 @@ class DataHandlerConfig:
   
   @staticmethod
   def select_preprocess_paths():
-    """Paths at our container storing our desired data for preprocessing
+    """Paths at our container storing our desired data for data preprocessing
     """
-    path:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}.tiff'                                     # pollutant, year, month, pollutant, year, month, day
+    input_data_path_struct:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}.tiff'                                     # pollutant, year, month, pollutant, year, month, day
+    output_data_path_struct:str = '/Ensemble/{}/{}/{}/CAMS_{}_{}-{}-{}_TEST.csv'                                     # pollutant, year, month, pollutant, year, month, day
     
-    return path
-  
+    return input_data_path_struct, output_data_path_struct
+
   @staticmethod
   def select_ml_paths(path_to_return:str=None):
     """Paths at our container storing our desired data for ML purposes
     """
 
-    train_path_struct: str = '/ML_Input/data-{}_{}-{}/{}_{}/training_input_{}_{}_{}-{}.parquet'        # pollutant, predval_start_year, predval_end_year, date_of_input, version, target, pollutant, train_start_year, train_end_year
-    validation_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/validation_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
-    prediction_path_struct:str = '/ML_Input/data-{}_{}-{}/{}_{}/prediction_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
+    train_path_struct: str = '/ML_Input/ANNUAL_DATA/data-{}_{}-{}/{}_{}/training_input_{}_{}_{}-{}.parquet'        # pollutant, predval_start_year, predval_end_year, date_of_input, version, target, pollutant, train_start_year, train_end_year
+    validation_path_struct:str = '/ML_Input/ANNUAL_DATA/data-{}_{}-{}/{}_{}/validation_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
+    prediction_path_struct:str = '/ML_Input/ANNUAL_DATA/data-{}_{}-{}/{}_{}/prediction_input_{}_{}-{}.parquet'     # pollutant, predval_start_year, predval_end_year, date_of_input, version, pollutant, predval_start_year, predval_end_year
+
     output_parquet_path_struct:str = '/ML_Output/{}_{}-{}_{}_maps_TEST.parquet'                                     # pollutant, predval_start_year, predval_end_year, date_of_input
     raster_outputs_path_struct:str = '/ML_Output/GeoTiffs/{}_{}_{}/{}_1km_{}_{}_0_Europe_EEA_ML_XGB_TEST.tiff'  # predyear, code, agg, predyear, code, agg, ml_models_config.model_str[:2]
 
     if path_to_return:
       return eval(path_to_return.lower())
+    
     return train_path_struct, validation_path_struct, prediction_path_struct, output_parquet_path_struct, raster_outputs_path_struct
   
   
@@ -170,6 +173,43 @@ class DataHandlerConfig:
             'weight_tr_mean_var_sur',
             'weight_urb', 
             'windspeed_mean_sur']
+    
+    o3      = ['AreaHa',
+                'GridNum1km',
+                'Year',
+                'avg_fga2015_mean_sur',
+                'avg_imp2015_mean_sur',
+                'avg_smallwoody_mean_sur',
+                'biogeoregions_1',
+                'biogeoregions_4',
+                'biogeoregions_6',
+                'biogeoregions_9',
+                'cams_O3',
+                'carbonseqcapacity_mean_sur',
+                'climate_HU',
+                'climate_TG',
+                'climate_TX',
+                'droughtimp_mean_sur',
+                'eRep_O3',
+                'ecoclimaregions_1',
+                'max_eudem',
+                'p50_hrlgrass',
+                'pop2018',
+                'sum_clc18_112',
+                'sum_clc18_121_mean_sur',
+                'sum_clc18_141_mean_sur',
+                'sum_clc18_243_mean_sur',
+                'sum_clc18_323',
+                'sum_elevbreak_Inlands',
+                'sum_elevbreak_Low_coasts',
+                'sum_elevbreak_Mountains',
+                'sum_envzones_ATC',
+                'sum_envzones_LUS',
+                'sum_urbdegree_11_mean_sur',
+                'sum_urbdegree_30',
+                'weight_tr_mean_sur',
+                'weight_urb',
+                'windspeed_mean_sur']
 
     o3_somo10 = ['AreaHa',
                 'GridNum1km',
@@ -252,7 +292,7 @@ class DataHandlerConfig:
     if pollutant_to_return:
       return eval(pollutant_to_return.lower())
       
-    return no2, pm10, pm25, o3_somo10, o3_somo25
+    return no2, pm10, pm25, o3, o3_somo10, o3_somo25
                         
 
 # COMMAND ----------
@@ -281,19 +321,23 @@ class MLModelsConfig:
     if self.model_str == 'XGBRegressor()':
       # Select our OPTIMIZED parameters for XGBoost
       if self.type_of_params == 'optimized':                                    # MODIFY ONLY IF YOU FOUND BETTER PARAMETERS
-        params = {'no2': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 0.3, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.7},
-                  'pm10': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 5, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.8},
-                  'pm25':{'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.2, 'reg_lambda': 5, 'subsample': 0.7},
-                  'o3_somo10': {'learning_rate': 0.05, 'max_depth': 4, 'gamma': 3, 'reg_alpha': 0.2, 'reg_lambda': 7, 'subsample': 0.7},
-                  'o3_somo35': {'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.8}}
+        params = {'no2': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 0.3, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.7}, #  RMSE : 5.539, corr: 0.88
+                  'pm10': {'learning_rate': 0.2, 'max_depth': 4, 'gamma': 5, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.8}, # RMSE: 4.212 corr: 0.82 ,
+                  'pm25':{'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.2, 'reg_lambda': 5, 'subsample': 0.7}, #  RMSE : 2.617, corr:0.87
+                  'o3': {'learning_rate': 0.05, 'max_depth': 4, 'gamma': 3, 'reg_alpha': 0.2, 'reg_lambda': 7, 'subsample': 0.7}, # RMSE: 2400.018, CORR=0.77
+                  'o3_somo10': {'learning_rate': 0.05, 'max_depth': 4, 'gamma': 3, 'reg_alpha': 0.2, 'reg_lambda': 7, 'subsample': 0.7}, # RMSE: 2400.018, CORR=0.77
+                  'o3_somo35': {'learning_rate': 0.1, 'max_depth': 5, 'gamma': 0.5, 'reg_alpha': 0.5, 'reg_lambda': 1, 'subsample': 0.8}} #  RMSE : 1379.97, corr: 0.81
         
       # Select our TESTING parameters for XGBoost
       if self.type_of_params == 'test':                                         # MODIFY HERE TO TEST NEW PARAMETERS COMBINATIONS
-        params = {'no2': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
-                  'pm10': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
-                  'pm25': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
-                  'o3_somo_10': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1},
-                  'o3_somo_35': {'learning_rate': 1, 'max_depth': 1, 'gamma': 1, 'reg_alpha': 1, 'reg_lambda': 1, 'subsample': 1}}
+        params = {
+          'no2': {'colsample_bytree': 0.7478329665318217, 'gamma': 12.529795965543993, 'learning_rate': 0.0947727234436404, 'max_depth': 18, 'min_child_weight': 4.049627400216884, 'n_estimators': 900, 'reg_alpha': 0.7812003855219977, 'random_state': 34,  'reg_lambda': 0.7935961566653076, 'subsample': 0.9820689712305682}, #  RMSE : 3.46 corr:0.96 --> normal error distr aroound 0 
+          'pm10':   {'colsample_bytree': 0.5333519921187898, 'gamma': 1.6671133316082125, 'learning_rate': 0.05675918594133165, 'max_depth': 13, 'min_child_weight': 1.003930564311644, 'n_estimators': 1400, 'reg_alpha': 3.1062085685015397, 'random_state': 34, 'reg_lambda': 69.3928604857206, 'subsample': 0.8887362931876186}, #  RMSE : 3.144, corr: 0.92 norm distr around 0
+          'pm25': {'colsample_bytree': 0.5854042704022238, 'gamma': 0.7776736808180962, 'learning_rate': 0.13463628223320084, 'max_depth': 15, 'min_child_weight': 21.1928560965576, 'n_estimators': 1200, 'reg_alpha': 6.655947811425231, 'random_state': 34, 'reg_lambda': 69.50926470959014, 'subsample': 0.7162214831401683},  #  RMSE : 2.139 corr:0.93 -> "normal" error distr around 0 
+          'o3': {'colsample_bytree': 0.4164639157027386, 'gamma': 2.5744247273428362, 'learning_rate': 0.04387990470807894, 'max_depth': 16, 'min_child_weight': 0.37914611416124433, 'n_estimators': 1600, 'reg_alpha': 2.3107143505857826, 'random_state': 34, 'reg_lambda': 0.6849732843086682, 'subsample': 0.9718978418952275}, #  RMSE : 4.787 CORR: 0.91 -> "normal" error distr around 0 
+          'o3_somo10': {'colsample_bytree': 0.5818604411677151, 'gamma': 7537.732469766586, 'learning_rate': 0.01557410162248457, 'max_depth': 20, 'min_child_weight': 8.474347267574483, 'n_estimators': 1600, 'reg_alpha': 1.6333118739027552, 'random_state': 34, 'reg_lambda': 24.29553144898469, 'subsample': 0.5838718603531566}, #  RMSE : 1806.561 CORR: 0.88 -> "normal" error distr around 0 
+          'o3_somo35': {'colsample_bytree': 0.9964037507890667, 'gamma': 0.42789049428167736, 'learning_rate': 0.018137673476546504, 'max_depth': 18, 'min_child_weight': 5.645269787190145, 'n_estimators': 1200, 'reg_alpha': 2.482247191238739, 'random_state': 34, 'reg_lambda': 12.336462308744192, 'subsample': 0.7020440218684973} #RMSE : 1193.196 CORR:0.86 -> "normal" error distr around 0
+                }
 
         
     # In case we did not configure a matching ML model
@@ -311,6 +355,16 @@ class MLModelsConfig:
     model_to_train = self.model.set_params(**ml_params)
     
     return model_to_train, ml_params
+  
+  def mq_thresholds(self):
+    thresholds = {
+      'no2':{'urv95r': 0.24, 'rv': 200, 'alfa': 0.20, 'np': 5.20, 'nnp':5.20},
+      'pm10':{'urv95r': 0.28, 'rv': 50, 'alfa': 0.13, 'np': 30, 'nnp':0.25},
+      'pm25':{'urv95r': 0.36, 'rv': 25, 'alfa': 0.30, 'np': 30, 'nnp':0.25},
+      'o3':{'urv95r': 0.18, 'rv': 120, 'alfa': 0.79, 'np': 11, 'nnp':3},
+    }
+
+    return thresholds[self.pollutant]
   
 
 # COMMAND ----------

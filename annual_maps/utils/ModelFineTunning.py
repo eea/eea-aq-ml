@@ -11,13 +11,14 @@ context_args = {
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC # 1. Model Fine Tune
+# MAGIC
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ### A) Hyperparameter tuning using random search
 
 # COMMAND ----------
@@ -198,8 +199,9 @@ for pollutant in pollutants:
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ### B) Hyperparameter tuning using grid search
+# MAGIC
 
 # COMMAND ----------
 
@@ -220,11 +222,12 @@ for pollutant in pollutants:
 
 # MAGIC %md
 # MAGIC ### A) Learning curve on data amount vs training and cv errors
+# MAGIC
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ** Pasar todo esto a una función **
 
 # COMMAND ----------
@@ -454,7 +457,7 @@ def validateModelTrainVal(model,X,y,y_ref):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC 
+# MAGIC
 # MAGIC ### Error distributions for ML predictions vs Reference ETC maps
 
 # COMMAND ----------

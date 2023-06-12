@@ -57,12 +57,7 @@ logging.getLogger("py4j").setLevel(logging.ERROR)
 class DataHandler(DataHandlerConfig):
   """Class containing all needed functions to collect/store data"""
   
-  
   def __init__(self, pollutant:str):
-    
-      # super().__init__()
-
-
     
     self.config = DataHandlerConfig()
     storage_account_name, blob_container_name, sas_key = self.config.select_container()
@@ -93,7 +88,7 @@ class DataHandler(DataHandlerConfig):
     return file_system_path    
     
     
-  def parquet_reader(self, path_to_parket:str, features:list=['*'], predict:bool = False):
+  def parquet_reader(self, path_to_parket:str, features:list=['*']):
     """Connects to the datasources and queries the desired parquet file to return a dataframe
     Params
     ------
@@ -104,159 +99,10 @@ class DataHandler(DataHandlerConfig):
     -------
       :parquet_data_filtered: str = Dataframe stored in the target parquet file
     """
-    if not predict:
-      features = self.config.select_cols(self.pollutant) if features[0]=='selected' else ['*'] 
     
     parquet_data = spark.read.parquet(self.file_system_path+path_to_parket)
-    print('Selecting cols: ', features)
     parquet_data_filtered = parquet_data.select(features)
     
-    print('Collecting data from: ', self.file_system_path+path_to_parket )
-
-    return parquet_data_filtered
-    
-
-  def tiff_reader(self, path_to_tiff:str):
-    """Connects to the datasources and loads the desired Geotiff file
-    Params
-    ------
-      :path_to_tiff: str = path to the stored tiff data
-
-    Returns
-    -------
-      :raster: array = values for the data at tiff 
-      :rasterXsize: int = size of raster
-      :transform: tuple = containing values used for the geotransformation
-      :no_data: str = missing data
-    """
-        
-    # Convert tiff to GDAL dataset
-    dataset = gdal.Open('/dbfs/' + self.file_system_path + path_to_tiff, gdal.GA_ReadOnly)
-    
-    # Convert GDAL Dataset into a Pandas Table.
-    transform = dataset.GetGeoTransform()
-    rasterXsize, rasterYSize = dataset.RasterXSize, dataset.RasterYSize
-    band_r    = dataset.GetRasterBand(1)
-    no_data   = band_r.GetNoDataValue()
-    band_r    = None
-    raster    = dataset.ReadAsArray(0, 0, rasterXsize, rasterYSize)
-    dataset = None
-  
-    return raster, rasterXsize, transform, no_data   
-  
-  
-  def parquet_storer(self, data:pd.DataFrame, output_path:str, compression:str='snappy', index:bool=False):                       
-    """Stores dataframe into parquet
-    Params
-    -------
-      :data: str = Dataframe containing data we are willing to store
-      :output_path: str = path to store our df
-      :compression: str = type of compression we are willing to use
-      :index: bool = willing to set new index or not
-    """
-    
-    data.to_parquet('/dbfs'+self.file_system_path+output_path, compression=compression, index=index)
-    
-    return None
-  
-  
-  def csv_storer(self, data:pd.DataFrame, output_path:str, compression:str='infer', index:bool=False):
-    """Stores dataframe into csv
-    Params
-    -------
-      :data: str = Dataframe containing data we are willing to store
-      :output_path: str = path to store our df
-      :compression: str = type of compression we are willing to use
-      :index: bool = willing to set new index or not
-    """
-    
-    data.to_csv('/dbfs'+self.file_system_path+output_path, compression=compression, index=index)
-    
-    return None
-  
-  
-  @staticmethod
-  def find_duplicates(df1:pd.DataFrame, df2:pd.DataFrame, cols_to_compare:list=['*']):
-    """Find duplicated values among two different dataframes
-    Params
-    ------
-      :df1: pd.DataFrame = Dataframe you are willing to co
-      mpare against df1
-      :cols_to_compare: list = Columns you are willing to compare
-
-    Returns
-    -------
-      :duplicated_rows_df: pd.DataFrame = Common rows found at both dataframes
-    """
-
-    duplicated_rows_df = df1[cols_to_compare].intersect(df2[cols_to_compare])
-
-    return duplicated_rows_df
-
-
-# COMMAND ----------
-
-# General functions to manipulate data
-
-class DataHandler(DataHandlerConfig):
-  """Class containing all needed functions to collect/store data"""
-  
-  
-  def __init__(self, pollutant:str):
-    
-
-
-
-    
-    self.config = DataHandlerConfig()
-    storage_account_name, blob_container_name, sas_key = self.config.select_container()
-    self.file_system_path = self.header(storage_account_name, blob_container_name, sas_key)
-    self.pollutant = pollutant.upper()
-
-    
-  @staticmethod
-  def header(storage_account_name, blob_container_name, sas_key):
-    """Mounts the Azure Blob Storage Container as a File System.
-    Params
-    ------
-      :storage_account_name: str = Name for the storage account we are willing to connect
-      :blob_container_name: str = Name for the container storing the desired data
-      :sas_key: str = API key
-
-    Returns
-    -------
-      :file_system_path: str = Path to /mnt datalake 
-    """
-
-    file_system_path = fsutils.mount_azure_container(
-    storage_account_name = storage_account_name, 
-    container_name = blob_container_name, 
-    sas_key = sas_key
-    )
-
-    return file_system_path    
-    
-    
-  def parquet_reader(self, path_to_parket:str, features:list=['*'], predict:bool = False):
-    """Connects to the datasources and queries the desired parquet file to return a dataframe
-    Params
-    ------
-      :path_to_parket: str = Name of the parquet file storing the desired data
-      :features: list = Columns' name we are willing to query
-
-    Returns
-    -------
-      :parquet_data_filtered: str = Dataframe stored in the target parquet file
-    """
-    if not predict:
-      features = self.config.select_cols(self.pollutant) if features[0]=='selected' else ['*'] 
-    
-    parquet_data = spark.read.parquet(self.file_system_path+path_to_parket)
-    print('Selecting cols: ', features)
-    parquet_data_filtered = parquet_data.select(features)
-    
-    print('Collecting data from: ', self.file_system_path+path_to_parket )
-
     return parquet_data_filtered
     
 
@@ -356,17 +202,17 @@ class MLDataHandler(DataHandler):
     """Builds path where we are storing our datafile by following the structure determined at init
     """
     if train_start_year:
-      train_path:str = self.train_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, target, self.data_handler.pollutant, train_start_year, train_end_year)
-      validation_path:str = self.validation_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
+      train_path:str = self.train_path_struct.format(self.data_handler.pollutant, train_start_year, train_end_year)
+      # validation_path:str = self.validation_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
 
-      return train_path, validation_path
+      return train_path#, validation_path
     
     else:
       prediction_path:str = self.prediction_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input, version, self.data_handler.pollutant, predval_start_year, predval_end_year)
       output_parquet_path:str = self.parquet_output_path_struct.format(self.data_handler.pollutant, predval_start_year, predval_end_year, date_of_input)
   
-      code_pollutant = {'NO2':'8', 'PM10':'5', 'PM25':'6001', 'O3':'7', 'O3_SOMO35':'7', 'O3_SOMO10':'7'}
-      agg_pollutant = {'NO2':'P1Y', 'PM10':'P1Y', 'PM25':'P1Y', 'O3':'P1Y', 'O3_SOMO35':'SOMO35', 'O3_SOMO10':'SOMO10'}
+      code_pollutant = {'NO2':'8', 'PM10':'5', 'PM25':'6001', 'O3_SOMO35':'7', 'O3_SOMO10':'7'}
+      agg_pollutant = {'NO2':'P1Y', 'PM10':'P1Y', 'PM25':'P1Y', 'O3_SOMO35':'SOMO35', 'O3_SOMO10':'SOMO10'}
       
       raster_output_path:str = self.raster_outputs_path_struct.format(predval_end_year, code_pollutant[self.data_handler.pollutant], agg_pollutant[self.data_handler.pollutant], predval_end_year, code_pollutant[self.data_handler.pollutant], agg_pollutant[self.data_handler.pollutant])                 # predyear, code, agg, predyear, code, agg
     
@@ -386,21 +232,21 @@ class MLDataHandler(DataHandler):
       :output_path: str = path to store the dataframe into parquet file
       :raster_output_path: str = path to store the dataframe into tiff file
     """
-    # selected_cols_pollutants = self.data_handler.config.select_cols(self.data_handler.pollutant) if features[0]=='selected' else ['*'] 
+    selected_cols_pollutants = self.data_handler.config.select_cols(self.data_handler.pollutant) if features[0]=='selected' else ['*'] 
 
     if train_start_year:
       train_path, validation_path = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, train_start_year, train_end_year)
       
-      train_data = self.data_handler.parquet_reader(train_path, features)
-      validation_data = self.data_handler.parquet_reader(validation_path, features)
+      train_data = self.data_handler.parquet_reader(train_path, selected_cols_pollutants)
+      validation_data = self.data_handler.parquet_reader(validation_path, selected_cols_pollutants)
       
       return train_data, validation_data
     
     else:
       prediction_path, output_parquet_path, raster_output_path = self.build_path(predval_start_year, predval_end_year, date_of_input, version, target, None, None)
-      features = self.data_handler.config.select_cols(pollutant) if features[0]=='selected' else ['*'] 
-      selected_cols_pollutants = [col for col in features if not (col.startswith('eRep') | col.startswith('e1b'))]
-      prediction_data = self.data_handler.parquet_reader(prediction_path, features=selected_cols_pollutants, predict=True)
+      
+      selected_cols_pollutants = [col for col in selected_cols_pollutants if not (col.startswith('eRep') | col.startswith('e1b'))]
+      prediction_data = self.data_handler.parquet_reader(prediction_path, features=selected_cols_pollutants)
       
       return prediction_data, output_parquet_path, raster_output_path
 
@@ -465,7 +311,7 @@ class MLWorker(MLModelsConfig):
 
   def __init__(self, pollutant, type_of_params:str=None):
     self.ml_models_config = MLModelsConfig(pollutant, type_of_params)
-    if type_of_params!= None: self.model_to_train, self.ml_params = self.ml_models_config.prepare_model()
+    if type_of_params != None: self.model_to_train, self.ml_params = self.ml_models_config.prepare_model()
 
   @staticmethod
   def split_data(df: pd.DataFrame, train_size:float=0.7, label:list=None):
@@ -489,7 +335,7 @@ class MLWorker(MLModelsConfig):
     df_y = df[label]
 
     # Splitting the dataframe
-    X_train, X_test, Y_train, Y_test = model_selection.train_test_split(df_x, df_y, train_size=train_size, random_state=42)                        
+    X_train, X_test, Y_train, Y_test = model_selection.train_test_split(df_x, df_y, train_size=train_size, random_state=34)                        
   
     return X_train, X_test, Y_train, Y_test
   
@@ -515,13 +361,13 @@ class MLWorker(MLModelsConfig):
       ml_model = mlflow.pyfunc.load_model(latest_version[0].source)
   
     else:
-      ml_model = model_name.fit(X_train_data, Y_train_data)
+      ml_model = model_name.fit(X_train_data, Y_train_data, verbose=True)
 
     return ml_model
-  
+    
   def mqi_calculator(self, y_test_data, predictions):
     """
-    Calculates the Model Quality Index (MQI) using the input test data and predictions.
+    Calculates the HOURLY Model Quality Index (MQI) using the input test data and predictions.
 
     Parameters:
     -----------
@@ -538,14 +384,18 @@ class MLWorker(MLModelsConfig):
 
     thresholds = self.ml_models_config.mq_thresholds()
     y_test_rav = y_test_data.to_numpy().ravel()
-    uncertainty = thresholds['urv95r']*np.sqrt(((1-np.square(thresholds['alfa']))*np.square(y_test_rav)/thresholds['np'])+(np.square(thresholds['alfa'])*np.square(thresholds['rv'])/thresholds['nnp']))
-    divid = abs(y_test_rav-predictions)
-    
-    mqi = divid/(2*uncertainty)
+
+    uncertainty = thresholds['urv95r']*np.sqrt((1-np.square(thresholds['alfa']))
+                                              *(np.square(np.mean(y_test_rav)) + np.square(np.std(y_test_rav)))
+                                              +np.square(thresholds['alfa'])*np.square(thresholds['rv']))
+
+    rmse = np.sqrt(mean_squared_error(y_test_data, predictions))
+    mqi = rmse/(thresholds['beta']*uncertainty)
 
     return mqi
-  
- # @staticmethod   
+
+
+  # @staticmethod   
   def evaluate_model(self, ml_model, predictions:pd.DataFrame, y_test_data:pd.DataFrame, bins:int=40):
     """Metrics and charts to evaluate performance of the ML model
     Params
@@ -578,23 +428,19 @@ class MLWorker(MLModelsConfig):
     except:
       print('Pollutant and target names could not be found')
 
-    print(f"\ntarget mean : {round(Y_mean, 3)}")
-    print(f" RMSE : {round(rmse, 3)}")
-    print(f" MAPE : {round(mape, 3)}%")
-    print(f" Correlation : {corr[0,1]}")
-    print(f" MQI 90 percentile : {np.percentile(mqi, 90)}\n")
+    print(f"\nTarget mean : {round(Y_mean, 3)},  RMSE : {round(rmse, 3)}, MAPE : {round(mape, 3)}%, Correlation : {corr[0,1]}, MQI 90 percentile : {np.percentile(mqi, 90)}\n" )
 
     results = pd.concat([y_test_data.reset_index(drop=True), pd.DataFrame(predictions)], axis=1)
     results.columns = ['actual', 'forecasted']
 
-    # Plotting lines for actuals vs forecasts data
-    fig = px.line(results)
-    fig.show()
+    # # Plotting lines for actuals vs forecasts data
+    # fig = px.line(results)
+    # fig.show()
     
     # Plot histogram showing errors in predictions
     diff_results = results.actual - results.forecasted
     diff_results.hist(bins=bins, figsize = (20,10))
-    plt.title('ML predict Errors distribution (actual-forecasted)')
+    plt.title('ML predict Errors distribution')
 
     try:
       # Feature importance of the trained model
@@ -608,7 +454,7 @@ class MLWorker(MLModelsConfig):
       
       return results, rmse, mape, _
     
-    return results, Y_mean, rmse, mape, corr, mqi, importance_scores, plt
+    return results, rmse, mape, importance_scores
   
   
   def ml_executor(self):
