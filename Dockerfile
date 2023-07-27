@@ -25,3 +25,4 @@ RUN python3 -m pip install tweepy
 RUN python3 -m pip install firebase_admin
 
 RUN python3 -m pip install adlfs
+RUN python3 -m pip install psycopg2
