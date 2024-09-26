@@ -26,3 +26,5 @@ RUN python3 -m pip install firebase_admin
 
 RUN python3 -m pip install adlfs
 RUN python3 -m pip install psycopg2
+
+RUN python3 -m pip install cdsapi
