@@ -28,3 +28,5 @@ RUN python3 -m pip install adlfs
 RUN python3 -m pip install psycopg2
 
 RUN python3 -m pip install cdsapi
+
+RUN python3 -m pip install psycopg2-binary sqlalchemy==1.4.52
